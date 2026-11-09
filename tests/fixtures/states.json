@@ -1,0 +1,580 @@
+{
+ "a": {
+  "binary_sensor.nas_security_status": {
+   "a": {
+    "device_class": "safety",
+    "friendly_name": "Security status"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "binary_sensor.router_connection": {
+   "a": {
+    "device_class": "connectivity",
+    "friendly_name": "Router connection"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "binary_sensor.router_link": {
+   "a": {
+    "device_class": "connectivity",
+    "friendly_name": "Router link"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "button.nas_reboot": {
+   "a": {
+    "device_class": "restart",
+    "friendly_name": "Nas reboot"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-11-01T08:12:00+00:00"
+  },
+  "button.nas_shutdown": {
+   "a": {
+    "friendly_name": "Nas shutdown"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-11-01T08:12:00+00:00"
+  },
+  "button.router_cleanup": {
+   "a": {
+    "friendly_name": "Router cleanup"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-11-01T08:12:00+00:00"
+  },
+  "button.router_firmware_update": {
+   "a": {
+    "friendly_name": "Router firmware update"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-11-01T08:12:00+00:00"
+  },
+  "button.router_reboot": {
+   "a": {
+    "device_class": "restart",
+    "friendly_name": "Router reboot"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-11-01T08:12:00+00:00"
+  },
+  "button.router_reconnect": {
+   "a": {
+    "friendly_name": "Router reconnect"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-11-01T08:12:00+00:00"
+  },
+  "calendar.family": {
+   "a": {
+    "friendly_name": "Family"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "cover.bedroom_blind": {
+   "a": {
+    "current_position": 40,
+    "device_class": "blind",
+    "friendly_name": "Bedroom blind",
+    "supported_features": 15
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "open"
+  },
+  "cover.kids_room_blind": {
+   "a": {
+    "current_position": 70,
+    "device_class": "blind",
+    "friendly_name": "Kids room blind",
+    "supported_features": 15
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "open"
+  },
+  "fan.air_purifier": {
+   "a": {
+    "friendly_name": "Air purifier",
+    "percentage": 40,
+    "percentage_step": 20,
+    "supported_features": 1
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "media_player.av_receiver": {
+   "a": {
+    "device_class": "receiver",
+    "friendly_name": "AV receiver",
+    "media_title": "Morning radio",
+    "volume_level": 0.4
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "playing"
+  },
+  "media_player.kitchen_speaker": {
+   "a": {
+    "device_class": "speaker",
+    "friendly_name": "Kitchen speaker"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "idle"
+  },
+  "media_player.living_room_tv": {
+   "a": {
+    "device_class": "tv",
+    "friendly_name": "Living room TV"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "person.alex": {
+   "a": {
+    "friendly_name": "Alex"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "home"
+  },
+  "script.play_radio": {
+   "a": {
+    "friendly_name": "Play radio",
+    "icon": "mdi:radio"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "sensor.air_purifier_air_quality": {
+   "a": {
+    "device_class": "enum",
+    "friendly_name": "Air quality",
+    "icon": "mdi:air-filter"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "excellent"
+  },
+  "sensor.air_purifier_filter_life": {
+   "a": {
+    "friendly_name": "Filter life",
+    "icon": "mdi:air-filter",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "83"
+  },
+  "sensor.air_purifier_pm2_5": {
+   "a": {
+    "device_class": "pm25",
+    "friendly_name": "PM2.5",
+    "unit_of_measurement": "µg/m³"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "8"
+  },
+  "sensor.living_room_temperature": {
+   "a": {
+    "device_class": "temperature",
+    "friendly_name": "Living room",
+    "unit_of_measurement": "°C"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "21.4"
+  },
+  "sensor.nas_cpu_load_average_15_min": {
+   "a": {
+    "friendly_name": "Nas cpu load average 15 min"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "0.42"
+  },
+  "sensor.nas_cpu_load_average_5_min": {
+   "a": {
+    "friendly_name": "Nas cpu load average 5 min"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "0.42"
+  },
+  "sensor.nas_cpu_utilization_total": {
+   "a": {
+    "friendly_name": "Nas cpu utilization total",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "7"
+  },
+  "sensor.nas_cpu_utilization_user": {
+   "a": {
+    "friendly_name": "Nas cpu utilization user",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "7"
+  },
+  "sensor.nas_download_throughput": {
+   "a": {
+    "device_class": "data_rate",
+    "friendly_name": "Nas download throughput",
+    "unit_of_measurement": "kB/s"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "12.5"
+  },
+  "sensor.nas_memory_available_real": {
+   "a": {
+    "device_class": "data_size",
+    "friendly_name": "Nas memory available real",
+    "unit_of_measurement": "MB"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "1510"
+  },
+  "sensor.nas_memory_available_swap": {
+   "a": {
+    "device_class": "data_size",
+    "friendly_name": "Nas memory available swap",
+    "unit_of_measurement": "MB"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "1510"
+  },
+  "sensor.nas_memory_total_real": {
+   "a": {
+    "device_class": "data_size",
+    "friendly_name": "Nas memory total real",
+    "unit_of_measurement": "MB"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "3892"
+  },
+  "sensor.nas_memory_total_swap": {
+   "a": {
+    "device_class": "data_size",
+    "friendly_name": "Nas memory total swap",
+    "unit_of_measurement": "MB"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "3892"
+  },
+  "sensor.nas_memory_usage_real": {
+   "a": {
+    "friendly_name": "Nas memory usage real",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "61"
+  },
+  "sensor.nas_temperature": {
+   "a": {
+    "device_class": "temperature",
+    "friendly_name": "NAS temperature",
+    "unit_of_measurement": "°C"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "41"
+  },
+  "sensor.nas_upload_throughput": {
+   "a": {
+    "device_class": "data_rate",
+    "friendly_name": "Nas upload throughput",
+    "unit_of_measurement": "kB/s"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "3.2"
+  },
+  "sensor.phone_alex_battery": {
+   "a": {
+    "device_class": "battery",
+    "friendly_name": "Alex's phone",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "62"
+  },
+  "sensor.phone_sam_battery": {
+   "a": {
+    "device_class": "battery",
+    "friendly_name": "Sam's phone",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "37"
+  },
+  "sensor.printer": {
+   "a": {
+    "friendly_name": "Printer",
+    "icon": "mdi:printer"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "idle"
+  },
+  "sensor.printer_black_toner": {
+   "a": {
+    "friendly_name": "Printer black toner",
+    "icon": "mdi:printer-3d-nozzle",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "35"
+  },
+  "sensor.printer_cyan_toner": {
+   "a": {
+    "friendly_name": "Printer cyan toner",
+    "icon": "mdi:printer-3d-nozzle",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "48"
+  },
+  "sensor.printer_magenta_toner": {
+   "a": {
+    "friendly_name": "Printer magenta toner",
+    "icon": "mdi:printer-3d-nozzle",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "41"
+  },
+  "sensor.printer_yellow_toner": {
+   "a": {
+    "friendly_name": "Printer yellow toner",
+    "icon": "mdi:printer-3d-nozzle",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "83"
+  },
+  "sensor.router_connection_uptime": {
+   "a": {
+    "device_class": "timestamp",
+    "friendly_name": "Router connection uptime"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-10-28T06:30:00+00:00"
+  },
+  "sensor.router_device_uptime": {
+   "a": {
+    "device_class": "timestamp",
+    "friendly_name": "Router device uptime"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "2026-10-28T06:30:00+00:00"
+  },
+  "sensor.router_max_download": {
+   "a": {
+    "device_class": "data_rate",
+    "friendly_name": "Max download",
+    "unit_of_measurement": "Mbit/s"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "250.0"
+  },
+  "sensor.router_max_upload": {
+   "a": {
+    "device_class": "data_rate",
+    "friendly_name": "Max upload",
+    "unit_of_measurement": "Mbit/s"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "40.0"
+  },
+  "sensor.tablet_battery": {
+   "a": {
+    "device_class": "battery",
+    "friendly_name": "Tablet",
+    "unit_of_measurement": "%"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "84"
+  },
+  "switch.bedroom_lamp": {
+   "a": {
+    "friendly_name": "Bedroom lamp"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "switch.bedside_left": {
+   "a": {
+    "friendly_name": "Bedside left"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "switch.bedside_right": {
+   "a": {
+    "friendly_name": "Bedside right"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "switch.coffee_machine": {
+   "a": {
+    "friendly_name": "Coffee machine"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "switch.desk_plug": {
+   "a": {
+    "friendly_name": "Desk plug"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "switch.floor_lamp": {
+   "a": {
+    "friendly_name": "Floor lamp"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "switch.garden_lights": {
+   "a": {
+    "friendly_name": "Garden lights"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "switch.router_guest_wifi": {
+   "a": {
+    "friendly_name": "Guest Wi-Fi"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "switch.router_wifi_2_4ghz": {
+   "a": {
+    "friendly_name": "Wi-Fi 2.4 GHz"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "switch.router_wifi_5ghz": {
+   "a": {
+    "friendly_name": "Wi-Fi 5 GHz"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "switch.shelf_left": {
+   "a": {
+    "friendly_name": "Shelf left"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "switch.shelf_right": {
+   "a": {
+    "friendly_name": "Shelf right"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "switch.table_lamp": {
+   "a": {
+    "friendly_name": "Table lamp"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "switch.tree_lights": {
+   "a": {
+    "friendly_name": "Tree lights"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "update.nas_os": {
+   "a": {
+    "friendly_name": "NAS OS",
+    "installed_version": "7.2.2",
+    "latest_version": "7.2.2"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "off"
+  },
+  "update.router_firmware": {
+   "a": {
+    "friendly_name": "Router firmware",
+    "installed_version": "7.57",
+    "latest_version": "8.02"
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "on"
+  },
+  "weather.home": {
+   "a": {
+    "friendly_name": "Home",
+    "humidity": 71,
+    "temperature": 14.2
+   },
+   "c": "01DEMO",
+   "lc": 1794207600.0,
+   "s": "partlycloudy"
+  }
+ }
+}

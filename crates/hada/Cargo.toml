@@ -1,0 +1,45 @@
+[package]
+name = "hada"
+description = "Native fullscreen Home Assistant dashboard (Slint)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "hada"
+path = "src/main.rs"
+
+[dependencies]
+hada-core = { path = "../hada-core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive", "env"] }
+directories = "6"
+toml = "0.9"
+png = { version = "0.18", optional = true }
+
+[dependencies.slint]
+version = "1.18"
+default-features = false
+features = ["std", "compat-1-18", "renderer-software"]
+
+[build-dependencies]
+slint-build = "1.18"
+
+[features]
+default = ["desktop"]
+desktop = ["slint/backend-winit", "slint/renderer-femtovg"]
+# Desktop window with the software renderer only: no OpenGL/gbm needed, so it
+# combines with `kiosk` into the single binary that releases ship.
+window = ["slint/backend-winit"]
+kiosk = ["slint/backend-linuxkms", "slint/backend-linuxkms-libinput", "slint/backend-linuxkms-libseat"]
+# Same without libseat: run as root or as a member of the video+input groups.
+kiosk-noseat = ["slint/backend-linuxkms", "slint/backend-linuxkms-libinput"]
+kiosk-gl = ["kiosk", "slint/renderer-femtovg"]
+screenshot = ["dep:png"]

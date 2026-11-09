@@ -1,0 +1,571 @@
+import { Theme } from "../theme.slint";
+import { Icon, IconCircle, ToggleSwitch, ToggleBar, ValueSlider, IconButton, Card, CardTitle } from "../widgets/widgets.slint";
+import { RowData, FeatureData, LeafCard, CardData, ControlKind, SliderKind, ActionKind } from "../types.slint";
+
+// Shared action signal; every card re-emits through this global so the root
+// only has to wire one callback.
+export global Actions {
+    callback action(entity-id: string, kind: ActionKind, value: float, card-id: int);
+    // Sliders report their SliderKind; map it to the matching ActionKind.
+    public function slider(entity-id: string, kind: SliderKind, value: float, card-id: int) {
+        if (kind == SliderKind.brightness-pct) { self.action(entity-id, ActionKind.set-brightness, value, card-id); }
+        else if (kind == SliderKind.fan-percentage) { self.action(entity-id, ActionKind.set-fan, value, card-id); }
+        else if (kind == SliderKind.cover-position) { self.action(entity-id, ActionKind.set-cover-position, value, card-id); }
+        else if (kind == SliderKind.cover-tilt) { self.action(entity-id, ActionKind.set-cover-tilt, value, card-id); }
+        else if (kind == SliderKind.temperature) { self.action(entity-id, ActionKind.set-temperature, value, card-id); }
+        else { self.action(entity-id, ActionKind.set-number, value, card-id); }
+    }
+}
+
+component StateText inherits Text {
+    in property <bool> dim;
+    color: root.dim ? Theme.text-faint : Theme.text-dim;
+    font-size: Theme.font-s;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+// The right-hand control of an entity row.
+component RowControl {
+    in property <RowData> data;
+    in property <int> card-id;
+    HorizontalLayout {
+        alignment: end;
+        spacing: 4px;
+        if root.data.control == ControlKind.toggle: ToggleSwitch {
+            checked: root.data.active;
+            pending: root.data.pending;
+            enabled: !root.data.unavailable;
+            toggled => { Actions.action(root.data.entity-id, ActionKind.toggle, 0, root.card-id); }
+        }
+        if root.data.control == ControlKind.open-close-stop: HorizontalLayout {
+            spacing: 4px;
+            IconButton { glyph: "\u{F005D}"; compact: true; enabled: !root.data.unavailable; clicked => { Actions.action(root.data.entity-id, ActionKind.open, 0, root.card-id); } }
+            IconButton { glyph: "\u{F04DB}"; compact: true; enabled: !root.data.unavailable; clicked => { Actions.action(root.data.entity-id, ActionKind.stop, 0, root.card-id); } }
+            IconButton { glyph: "\u{F0045}"; compact: true; enabled: !root.data.unavailable; clicked => { Actions.action(root.data.entity-id, ActionKind.close, 0, root.card-id); } }
+        }
+        if root.data.control == ControlKind.press: IconButton {
+            label: root.data.action-name == "" ? "Press" : root.data.action-name;
+            enabled: !root.data.unavailable;
+            clicked => { Actions.action(root.data.entity-id, ActionKind.press, 0, root.card-id); }
+        }
+        if root.data.control == ControlKind.run: IconButton {
+            label: root.data.action-name == "" ? "Run" : root.data.action-name;
+            enabled: !root.data.unavailable;
+            clicked => { Actions.action(root.data.entity-id, ActionKind.run, 0, root.card-id); }
+        }
+        if root.data.control == ControlKind.install: IconButton {
+            label: "Install";
+            accent: true;
+            enabled: !root.data.unavailable && !root.data.pending;
+            clicked => { Actions.action(root.data.entity-id, ActionKind.install, 0, root.card-id); }
+        }
+        if root.data.control == ControlKind.none || root.data.control == ControlKind.slider: StateText {
+            text: root.data.state-text;
+            dim: root.data.unavailable;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// One line of an entities card.
+export component EntityRow {
+    in property <RowData> data;
+    in property <int> card-id;
+    in property <bool> state-color;
+    min-height: root.data.kind == 2 ? 9px : (root.data.kind == 1 ? 36px : Theme.row-h);
+    VerticalLayout {
+        if root.data.kind == 0 || root.data.kind == 5: HorizontalLayout {
+            spacing: 12px;
+            min-height: Theme.row-h;
+            Icon {
+                glyph: root.data.glyph;
+                color: root.data.unavailable ? Theme.text-faint : (root.state-color && root.data.active ? Theme.accent : Theme.text-dim);
+                vertical-alignment: center;
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.data.name;
+                    color: root.data.unavailable ? Theme.text-faint : Theme.text;
+                    font-size: Theme.font-m;
+                    overflow: elide;
+                }
+                if root.data.secondary != "": StateText { text: root.data.secondary; }
+            }
+            RowControl { data: root.data; card-id: root.card-id; }
+        }
+        if root.data.kind == 0 && root.data.control == ControlKind.slider: ValueSlider {
+            value: root.data.value;
+            minimum: root.data.min;
+            maximum: root.data.max;
+            step: root.data.step;
+            unit: root.data.unit;
+            enabled: !root.data.unavailable;
+            changed(v) => { Actions.slider(root.data.entity-id, root.data.slider-kind, v, root.card-id); }
+        }
+        if root.data.kind == 1: Text {
+            text: root.data.name;
+            color: Theme.text-dim;
+            font-size: Theme.font-s;
+            font-weight: 600;
+            vertical-alignment: bottom;
+            height: 36px;
+        }
+        if root.data.kind == 2: VerticalLayout {
+            padding-top: 4px;
+            padding-bottom: 4px;
+            Rectangle { height: 1px; background: Theme.divider; }
+        }
+        if root.data.kind == 3: HorizontalLayout {
+            spacing: 12px;
+            min-height: Theme.row-h;
+            if root.data.glyph != "": Icon { glyph: root.data.glyph; color: Theme.text-dim; }
+            Text {
+                text: root.data.name;
+                color: Theme.text;
+                font-size: Theme.font-m;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            IconButton {
+                label: root.data.action-name == "" ? "Run" : root.data.action-name;
+                clicked => { Actions.action(root.data.entity-id, ActionKind.row-action, 0, root.card-id); }
+            }
+        }
+        // 6: calendar day header (name = weekday, state-text = full date)
+        if root.data.kind == 6: VerticalLayout {
+            padding-top: 6px;
+            Rectangle { height: 1px; background: Theme.divider; }
+            HorizontalLayout {
+                height: 34px;
+                spacing: 8px;
+                Text {
+                    text: root.data.name;
+                    color: root.data.active ? Theme.accent : Theme.text;
+                    font-size: Theme.font-s;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.data.state-text;
+                    color: root.data.active ? Theme.accent : Theme.text-dim;
+                    font-size: Theme.font-s;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        // 7: calendar event (name = summary, state-text = time, secondary = location)
+        if root.data.kind == 7: HorizontalLayout {
+            spacing: 10px;
+            min-height: 40px;
+            Text {
+                text: root.data.state-text;
+                color: Theme.text-dim;
+                font-size: Theme.font-s;
+                vertical-alignment: center;
+                width: 104px;
+            }
+            VerticalLayout {
+                alignment: center;
+                Rectangle { width: 8px; height: 8px; border-radius: 4px; background: Theme.primary; }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text { text: root.data.name; color: Theme.text; font-size: Theme.font-m; overflow: elide; }
+                if root.data.secondary != "": StateText { text: root.data.secondary; }
+            }
+        }
+        if root.data.kind == 4: VerticalLayout {
+            padding-top: 4px;
+            padding-bottom: 4px;
+            Text {
+                text: root.data.name;
+                color: root.data.state-text != "" ? Theme.primary : Theme.text;
+                font-size: Theme.font-m;
+                wrap: word-wrap;
+            }
+            if root.data.state-text != "": Text {
+                text: root.data.state-text;
+                color: Theme.text-faint;
+                font-size: Theme.font-s;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+// A tile-card feature row (toggle, slider, cover buttons, action button).
+component FeatureRow {
+    in property <FeatureData> feature;
+    in property <int> card-id;
+    HorizontalLayout {
+        spacing: 8px;
+        if root.feature.kind == ControlKind.toggle: ToggleBar {
+            checked: root.feature.on;
+            pending: root.feature.pending;
+            enabled: root.feature.available;
+            toggled => { Actions.action(root.feature.entity-id, ActionKind.toggle, 0, root.card-id); }
+        }
+        if root.feature.kind == ControlKind.slider: ValueSlider {
+            value: root.feature.value;
+            minimum: root.feature.min;
+            maximum: root.feature.max;
+            step: root.feature.step;
+            unit: root.feature.unit;
+            enabled: root.feature.available;
+            changed(v) => { Actions.slider(root.feature.entity-id, root.feature.slider-kind, v, root.card-id); }
+        }
+        if root.feature.kind == ControlKind.open-close-stop: HorizontalLayout {
+            spacing: 8px;
+            IconButton { glyph: "\u{F005D}"; enabled: root.feature.available; clicked => { Actions.action(root.feature.entity-id, ActionKind.open, 0, root.card-id); } }
+            IconButton { glyph: "\u{F04DB}"; enabled: root.feature.available; clicked => { Actions.action(root.feature.entity-id, ActionKind.stop, 0, root.card-id); } }
+            IconButton { glyph: "\u{F0045}"; enabled: root.feature.available; clicked => { Actions.action(root.feature.entity-id, ActionKind.close, 0, root.card-id); } }
+        }
+        if root.feature.kind == ControlKind.press: IconButton {
+            label: root.feature.label == "" ? "Press" : root.feature.label;
+            enabled: root.feature.available;
+            clicked => { Actions.action(root.feature.entity-id, ActionKind.press, 0, root.card-id); }
+        }
+        if root.feature.kind == ControlKind.run: IconButton {
+            label: root.feature.label == "" ? "Run" : root.feature.label;
+            enabled: root.feature.available;
+            clicked => { Actions.action(root.feature.entity-id, ActionKind.run, 0, root.card-id); }
+        }
+        if root.feature.kind == ControlKind.install: IconButton {
+            label: "Install update";
+            accent: true;
+            enabled: root.feature.available && !root.feature.pending;
+            clicked => { Actions.action(root.feature.entity-id, ActionKind.install, 0, root.card-id); }
+        }
+    }
+}
+
+export component TileCard inherits Card {
+    in property <LeafCard> card;
+    property <RowData> main: root.card.rows[0];
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: Theme.gap;
+        HorizontalLayout {
+            spacing: 12px;
+            IconCircle {
+                glyph: root.main.glyph;
+                active: root.main.active;
+                dim: root.main.unavailable;
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.main.name;
+                    color: root.main.unavailable ? Theme.text-faint : Theme.text;
+                    font-size: Theme.font-m;
+                    font-weight: 500;
+                    overflow: elide;
+                }
+                if !root.card.hide-state: StateText { text: root.main.state-text; dim: root.main.unavailable; }
+            }
+            if root.main.pending: VerticalLayout { alignment: start; padding-top: 6px; Rectangle { width: 8px; height: 8px; border-radius: 4px; background: Theme.warn; } }
+        }
+        for f in root.card.features: FeatureRow { feature: f; card-id: root.card.card-id; }
+    }
+    // Tap on the header area toggles toggleable entities (HA icon_tap_action default).
+    if root.card.tap-toggles: TouchArea {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: min(64px, parent.height);
+        enabled: !root.main.unavailable;
+        clicked => { Actions.action(root.main.entity-id, ActionKind.toggle, 0, root.card.card-id); }
+    }
+}
+
+export component EntitiesCard inherits Card {
+    in property <LeafCard> card;
+    VerticalLayout {
+        padding: Theme.pad;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        if root.card.title != "" || root.card.header-toggle >= 0: HorizontalLayout {
+            min-height: 52px;
+            spacing: 8px;
+            CardTitle { text: root.card.title; horizontal-stretch: 1; }
+            if root.card.header-toggle >= 0: ToggleSwitch {
+                checked: root.card.header-toggle == 1;
+                toggled => { Actions.action("", ActionKind.header-toggle, root.card.header-toggle == 1 ? 0 : 1, root.card.card-id); }
+            }
+        }
+        for r in root.card.rows: EntityRow { data: r; card-id: root.card.card-id; state-color: root.card.state-color; }
+    }
+}
+
+component GlanceItem {
+    in property <RowData> item;
+    in property <bool> show-name;
+    in property <bool> show-icon;
+    in property <bool> show-state;
+    in property <int> card-id;
+    min-width: 72px;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        padding: 4px;
+        if root.show-name: Text {
+            text: root.item.name;
+            color: Theme.text-dim;
+            font-size: Theme.font-s;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+        if root.show-icon: Icon {
+            glyph: root.item.glyph;
+            size: 28px;
+            color: root.item.unavailable ? Theme.text-faint : (root.item.active ? Theme.accent : Theme.text);
+            horizontal-alignment: center;
+        }
+        if root.show-state: Text {
+            text: root.item.state-text;
+            color: root.item.unavailable ? Theme.text-faint : Theme.text;
+            font-size: Theme.font-s;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+    if root.item.control == ControlKind.toggle || root.item.control == ControlKind.run || root.item.control == ControlKind.press: TouchArea {
+        enabled: !root.item.unavailable;
+        clicked => { Actions.action(root.item.entity-id, ActionKind.toggle, 0, root.card-id); }
+    }
+}
+
+export component GlanceCard inherits Card {
+    in property <LeafCard> card;
+    // columns > 0 ⇒ items are laid out in rows of `columns` (grid-row/grid-col set by Rust).
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 4px;
+        if root.card.title != "": CardTitle { text: root.card.title; height: 40px; }
+        GridLayout {
+            spacing: 4px;
+            for r in root.card.rows: GlanceItem {
+                row: r.grid-row;
+                col: r.grid-col;
+                item: r;
+                show-name: root.card.show-name;
+                show-icon: root.card.show-icon;
+                show-state: root.card.show-state;
+                card-id: root.card.card-id;
+            }
+        }
+    }
+}
+
+export component SensorCard inherits Card {
+    in property <LeafCard> card;
+    property <RowData> main: root.card.rows[0];
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 8px;
+            Icon { glyph: root.main.glyph; color: Theme.text-dim; }
+            Text {
+                text: root.card.title != "" ? root.card.title : root.main.name;
+                color: Theme.text-dim;
+                font-size: Theme.font-m;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        Text {
+            text: root.main.state-text;
+            color: root.main.unavailable ? Theme.text-faint : Theme.text;
+            font-size: Theme.font-xl;
+            font-weight: 300;
+        }
+    }
+}
+
+export component GaugeCard inherits Card {
+    in property <LeafCard> card;
+    property <RowData> main: root.card.rows[0];
+    property <float> frac: root.card.max > root.card.min ? clamp((root.main.value - root.card.min) / (root.card.max - root.card.min), 0, 1) : 0;
+    // Severity: the colour whose threshold is the largest one ≤ value.
+    property <color> level: !root.card.has-severity ? Theme.primary
+        : (root.main.value >= root.card.sev-red && root.card.sev-red >= root.card.sev-yellow && root.card.sev-red >= root.card.sev-green) ? Theme.danger
+        : (root.main.value >= root.card.sev-yellow && root.card.sev-yellow >= root.card.sev-green) ? Theme.warn
+        : (root.main.value >= root.card.sev-green) ? Theme.ok
+        : root.main.value >= root.card.sev-red ? Theme.danger
+        : root.main.value >= root.card.sev-yellow ? Theme.warn : Theme.ok;
+    // Half circle from 180° to 180°+frac·180° drawn with an arc command in a 100×50 viewbox.
+    property <float> angle: 3.14159265 * (1 - root.frac);
+    property <float> ex: 50 + 42 * cos(root.angle * 1rad);
+    property <float> ey: 50 - 42 * sin(root.angle * 1rad);
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 2px;
+        Rectangle {
+            height: 90px;
+            Path {
+                width: 160px;
+                height: 80px;
+                viewbox-x: 0; viewbox-y: 0; viewbox-width: 100; viewbox-height: 54;
+                stroke: Theme.track;
+                stroke-width: 10px;
+                stroke-line-cap: round;
+                commands: "M 8 50 A 42 42 0 0 1 92 50";
+            }
+            if root.frac > 0.001: Path {
+                width: 160px;
+                height: 80px;
+                viewbox-x: 0; viewbox-y: 0; viewbox-width: 100; viewbox-height: 54;
+                stroke: root.level;
+                stroke-width: 10px;
+                stroke-line-cap: round;
+                commands: "M 8 50 A 42 42 0 0 1 " + root.ex + " " + root.ey;
+            }
+            Text {
+                y: 44px;
+                text: root.main.state-text;
+                color: root.main.unavailable ? Theme.text-faint : Theme.text;
+                font-size: Theme.font-l;
+                font-weight: 500;
+                horizontal-alignment: center;
+            }
+        }
+        Text {
+            text: root.card.title != "" ? root.card.title : root.main.name;
+            color: Theme.text-dim;
+            font-size: Theme.font-m;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+export component CalendarCard inherits Card {
+    in property <LeafCard> card;
+    VerticalLayout {
+        padding: Theme.pad;
+        padding-top: 4px;
+        spacing: 2px;
+        HorizontalLayout {
+            min-height: 48px;
+            spacing: 8px;
+            CardTitle { text: root.card.title; horizontal-stretch: 1; }
+            if root.card.subtitle != "": Text {
+                text: root.card.subtitle;
+                color: Theme.text-dim;
+                font-size: Theme.font-m;
+                vertical-alignment: center;
+            }
+        }
+        for r in root.card.rows: EntityRow { data: r; card-id: root.card.card-id; }
+    }
+}
+
+export component MarkdownCard inherits Card {
+    in property <LeafCard> card;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 2px;
+        if root.card.title != "": CardTitle { text: root.card.title; height: 40px; }
+        for r in root.card.rows: EntityRow { data: r; card-id: root.card.card-id; }
+    }
+}
+
+export component ButtonCard inherits Card {
+    in property <LeafCard> card;
+    property <RowData> main: root.card.rows[0];
+    background: ta.pressed ? Theme.pressed : Theme.card;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        alignment: center;
+        Icon {
+            glyph: root.main.glyph;
+            size: 40px;
+            color: root.main.active ? Theme.accent : Theme.text;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.card.title != "" ? root.card.title : root.main.name;
+            color: Theme.text;
+            font-size: Theme.font-m;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+    ta := TouchArea {
+        clicked => { Actions.action(root.main.entity-id, ActionKind.row-action, 0, root.card.card-id); }
+    }
+}
+
+// Card type we do not render natively yet: dashed frame, type name, and the
+// entities it references with their live state.
+export component PlaceholderCard inherits Card {
+    in property <LeafCard> card;
+    background: transparent;
+    border-width: 1px;
+    border-color: Theme.divider;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 8px;
+            min-height: 36px;
+            Icon { glyph: "\u{F0BA6}"; color: Theme.text-faint; size: 20px; }
+            Text {
+                text: (root.card.title != "" ? root.card.title + "  ·  " : "") + root.card.raw-type;
+                color: Theme.text-faint;
+                font-size: Theme.font-s;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        for r in root.card.rows: EntityRow { data: r; card-id: root.card.card-id; state-color: true; }
+    }
+}
+
+// Conditional children live inside a layout: a layout ignores inactive `if`
+// branches, whereas a plain element would inherit their zero size constraints.
+export component LeafCardView inherits VerticalLayout {
+    in property <LeafCard> card;
+    if root.card.kind == 0: TileCard { card: root.card; }
+    if root.card.kind == 1: EntitiesCard { card: root.card; }
+    if root.card.kind == 2: GlanceCard { card: root.card; }
+    if root.card.kind == 3: SensorCard { card: root.card; }
+    if root.card.kind == 4: GaugeCard { card: root.card; }
+    if root.card.kind == 6: MarkdownCard { card: root.card; }
+    if root.card.kind == 7: ButtonCard { card: root.card; }
+    if root.card.kind == 8 || root.card.kind == 5: PlaceholderCard { card: root.card; }
+    if root.card.kind == 9: CalendarCard { card: root.card; }
+}
+
+// A `grid` card: children in rows of `grid-columns` (positions from Rust).
+export component GridCard inherits Card {
+    in property <CardData> card;
+    VerticalLayout {
+        padding: root.card.leaf.title != "" ? Theme.pad : 0px;
+        spacing: Theme.gap;
+        if root.card.leaf.title != "": CardTitle { text: root.card.leaf.title; height: 36px; }
+        GridLayout {
+            spacing: Theme.gap;
+            for child in root.card.children: LeafCardView {
+                row: child.grid-row;
+                col: child.grid-col;
+                card: child;
+            }
+        }
+    }
+}
+
+export component CardView inherits VerticalLayout {
+    in property <CardData> card;
+    if root.card.is-grid: GridCard { card: root.card; }
+    if !root.card.is-grid: LeafCardView { card: root.card.leaf; }
+}

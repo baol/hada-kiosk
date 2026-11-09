@@ -1,0 +1,115 @@
+// Data types shared between Rust and the UI. Kept flat and non-recursive
+// (Slint structs cannot contain themselves), so a grid card holds `LeafCard`
+// children and nested grids are not representable (they become placeholders).
+
+export enum ControlKind { none, toggle, slider, open-close-stop, press, run, install }
+
+// Slider semantics (what the float means) – mirrors hada_core::domain::SliderKind.
+export enum SliderKind { brightness-pct, fan-percentage, cover-position, cover-tilt, number, temperature }
+
+export enum ActionKind {
+    toggle, turn-on, turn-off,
+    set-brightness, set-fan, set-cover-position, set-cover-tilt, set-number, set-temperature,
+    open, close, stop, press, run, install, header-toggle, row-action
+}
+
+// Row kinds for entities-like lists.
+// 0 entity, 1 section label, 2 divider, 3 button row, 4 text/link line, 5 attribute (read only)
+export struct RowData {
+    entity-id: string,
+    name: string,
+    secondary: string,
+    glyph: string,
+    state-text: string,
+    active: bool,
+    unavailable: bool,
+    pending: bool,
+    control: ControlKind,
+    slider-kind: SliderKind,
+    value: float,
+    min: float,
+    max: float,
+    step: float,
+    unit: string,
+    kind: int,
+    action-name: string,
+    grid-row: int,
+    grid-col: int,
+}
+
+export struct FeatureData {
+    entity-id: string,
+    kind: ControlKind,
+    slider-kind: SliderKind,
+    value: float,
+    min: float,
+    max: float,
+    step: float,
+    unit: string,
+    label: string,
+    pending: bool,
+    on: bool,
+    available: bool,
+}
+
+// kind: 0 tile, 1 entities, 2 glance, 3 sensor, 4 gauge, 6 markdown, 7 button, 8 placeholder
+export struct LeafCard {
+    kind: int,
+    raw-type: string,
+    title: string,
+    subtitle: string,       // e.g. calendar date range
+    card-id: int,
+    header-toggle: int,     // -1 none, 0 off, 1 on
+    tap-toggles: bool,
+    hide-state: bool,
+    state-color: bool,
+    show-name: bool,
+    show-icon: bool,
+    show-state: bool,
+    rows: [RowData],
+    features: [FeatureData],
+    min: float,
+    max: float,
+    has-severity: bool,
+    sev-green: float,
+    sev-yellow: float,
+    sev-red: float,
+    unit: string,
+    fixed-rows: int,        // 0 = auto height, else n × 56 px (sections view)
+    span: int,              // columns of 12 in a section
+    grid-row: int,          // position inside a grid card
+    grid-col: int,
+}
+
+export struct CardData {
+    leaf: LeafCard,
+    is-grid: bool,
+    grid-columns: int,
+    children: [LeafCard],
+}
+
+export struct CardRow {
+    cards: [CardData],
+    fill: int,              // empty column units at the end of the row
+}
+
+export struct ColumnData {
+    title: string,
+    span: int,
+    rows: [CardRow],
+}
+
+export struct SectionRow {
+    sections: [ColumnData],
+    fill: int,
+}
+
+export struct ViewData {
+    title: string,
+    glyph: string,
+    path: string,
+    is-sections: bool,
+    max-columns: int,
+    badges: [RowData],
+    rows: [SectionRow],
+}

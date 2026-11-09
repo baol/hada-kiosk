@@ -1,0 +1,256 @@
+views:
+  - theme: Backend-selected
+    title: Home
+    icon: mdi:home
+    badges: []
+    cards:
+      - type: map
+        entities:
+          - entity: person.alex
+        theme_mode: auto
+      - initial_view: listWeek
+        type: calendar
+        entities:
+          - calendar.family
+      - show_current: true
+        show_forecast: true
+        type: weather-forecast
+        entity: weather.home
+      - type: tile
+        entity: switch.coffee_machine
+        features:
+          - type: toggle
+      - type: entities
+        entities:
+          - entity: switch.table_lamp
+          - entity: switch.shelf_right
+          - entity: switch.shelf_left
+          - entity: switch.floor_lamp
+        title: Living room lights
+        state_color: true
+      - type: tile
+        entity: switch.desk_plug
+        features:
+          - type: toggle
+      - type: entities
+        entities:
+          - entity: script.play_radio
+          - entity: media_player.av_receiver
+          - entity: media_player.living_room_tv
+        title: Devices
+      - show_name: true
+        show_icon: true
+        show_state: true
+        type: glance
+        entities:
+          - entity: sensor.tablet_battery
+          - entity: sensor.phone_alex_battery
+          - entity: sensor.phone_sam_battery
+      - hours_to_show: 24
+        graph: none
+        type: sensor
+        entity: sensor.living_room_temperature
+        detail: 2
+      - type: entities
+        entities:
+          - entity: sensor.air_purifier_pm2_5
+          - entity: sensor.air_purifier_air_quality
+          - entity: fan.air_purifier
+          - entity: sensor.air_purifier_filter_life
+        title: Air purifier
+      - type: entities
+        entities:
+          - entity: switch.bedroom_lamp
+          - entity: switch.bedside_left
+          - entity: switch.bedside_right
+        title: Bedroom lights
+        state_color: true
+        show_header_toggle: true
+      - type: grid
+        square: false
+        columns: 1
+        cards:
+          - type: media-control
+            entity: media_player.kitchen_speaker
+          - type: media-control
+            entity: media_player.av_receiver
+      - type: tile
+        entity: cover.kids_room_blind
+        features:
+          - type: cover-open-close
+          - type: cover-position
+      - type: tile
+        entity: cover.bedroom_blind
+        features:
+          - type: cover-open-close
+          - type: cover-position
+      - type: tile
+        entity: switch.garden_lights
+        features:
+          - type: toggle
+  - theme: Backend-selected
+    title: Holiday
+    path: holiday
+    subview: false
+    icon: mdi:pine-tree
+    badges: []
+    cards:
+      - type: entities
+        entities:
+          - entity: switch.garden_lights
+          - entity: switch.floor_lamp
+          - entity: switch.tree_lights
+        title: Holiday lights
+  - theme: Backend-selected
+    title: Devices
+    path: devices
+    icon: mdi:devices
+    badges: []
+    cards:
+      - type: entities
+        entities:
+          - sensor.printer
+          - entity: sensor.printer_black_toner
+            name: Black toner
+          - entity: sensor.printer_cyan_toner
+            name: Cyan toner
+          - entity: sensor.printer_magenta_toner
+            name: Magenta toner
+          - entity: sensor.printer_yellow_toner
+            name: Yellow toner
+        title: Printer
+      - type: entities
+        entities:
+          - entity: button.router_cleanup
+            name: Cleanup
+          - entity: update.router_firmware
+            name: Router firmware
+          - entity: button.router_firmware_update
+            name: Firmware Update
+          - entity: button.router_reboot
+            name: Reboot
+          - entity: button.router_reconnect
+            name: Reconnect
+          - entity: switch.router_wifi_2_4ghz
+            name: Wi-Fi 2.4 GHz
+          - entity: switch.router_wifi_5ghz
+            name: Wi-Fi 5 GHz
+          - entity: switch.router_guest_wifi
+            name: Guest Wi-Fi
+        title: Router
+      - type: entities
+        entities:
+          - entity: binary_sensor.router_connection
+            name: Connection
+          - entity: sensor.router_connection_uptime
+            name: Connection Uptime
+          - entity: sensor.router_device_uptime
+            name: Device Uptime
+          - entity: binary_sensor.router_link
+            name: Link
+          - entity: sensor.router_max_download
+            name: Max Connection Download Throughput
+          - entity: sensor.router_max_upload
+            name: Max Connection Upload Throughput
+        title: Router
+      - type: entities
+        entities:
+          - entity: sensor.nas_cpu_load_average_15_min
+            name: CPU Load Average (15 min)
+          - entity: sensor.nas_cpu_load_average_5_min
+            name: CPU Load Average (5 min)
+          - entity: sensor.nas_cpu_utilization_total
+            name: CPU Utilization (Total)
+          - entity: sensor.nas_cpu_utilization_user
+            name: CPU Utilization (User)
+          - entity: sensor.nas_download_throughput
+            name: Download Throughput
+          - entity: sensor.nas_memory_available_real
+            name: Memory Available (Real)
+          - entity: sensor.nas_memory_available_swap
+            name: Memory Available (Swap)
+          - entity: sensor.nas_memory_total_real
+            name: Memory Total (Real)
+          - entity: sensor.nas_memory_total_swap
+            name: Memory Total (Swap)
+          - entity: sensor.nas_memory_usage_real
+            name: Memory Usage (Real)
+          - entity: binary_sensor.nas_security_status
+            name: Security Status
+          - entity: sensor.nas_upload_throughput
+            name: Upload Throughput
+        title: NAS
+      - type: entities
+        entities:
+          - entity: button.nas_reboot
+            name: Reboot
+          - entity: button.nas_shutdown
+            name: Shutdown
+        title: NAS
+      - type: entities
+        entities:
+          - entity: update.nas_os
+            name: NAS OS
+          - entity: sensor.nas_temperature
+            name: Temperature
+        title: NAS
+      - type: markdown
+        content: |-
+          [NAS](http://nas.local:5000)
+          [Git server](http://nas.local:3000)
+          [3D printer](http://octoprint.local)
+          [Router](http://router.local)
+          [Printer](http://printer.local)
+          [AV receiver](http://receiver.local)
+          [Wi-Fi repeater](http://repeater.local)
+        title: Links
+  - title: Kiosk
+    path: kiosk
+    icon: mdi:tablet-dashboard
+    type: sections
+    max_columns: 2
+    dense_section_placement: false
+    badges:
+      - type: entity
+        entity: sensor.living_room_temperature
+    sections:
+      - type: grid
+        cards:
+          - type: tile
+            entity: switch.coffee_machine
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.garden_lights
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.shelf_left
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.shelf_right
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.floor_lamp
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.table_lamp
+            features:
+              - type: toggle
+      - type: grid
+        cards: []
+      - type: grid
+        column_span: 2
+        cards:
+          - type: calendar
+            title: Family
+            initial_view: listWeek
+            entities:
+              - calendar.family
+            grid_options:
+              columns: full
+              rows: auto
+title: Demo

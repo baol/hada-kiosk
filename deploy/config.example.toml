@@ -1,0 +1,32 @@
+# hada configuration: ~/.config/hada/config.toml (or --config <file>).
+# Every key is also a command-line flag (--url, --token, ...); all but `scale`
+# also have an environment variable (HADA_URL, HADA_TOKEN, ...). Flags win over the
+# environment, the environment wins over this file.
+
+# Home Assistant address. A dashboard URL also selects dashboard and view:
+# "http://homeassistant.local:8123/lovelace/kiosk" = default dashboard, view "kiosk".
+url = "http://homeassistant.local:8123"
+
+# Authentication: a long-lived access token (profile > Security in Home Assistant),
+# inline or in a file. Without a token hada logs in through the
+# trusted_networks auth provider, if Home Assistant has it configured.
+#token = "eyJ..."
+#token_file = "/etc/hada.token"
+
+# User to log in as through trusted_networks, when several are allowed.
+#user = "kiosk"
+
+# Language for state texts ("On", "Acceso", "An"), default from $LANG.
+#lang = "en"
+
+# Dashboard: a url_path from the browser address bar ("dashboard-kiosk"),
+# or a local YAML file exported from the raw configuration editor.
+# Default: the dashboard in `url`, otherwise the default dashboard.
+#dashboard = "dashboard-kiosk"
+
+# View to open first: its path, title or index. Default: from `url`, else the first.
+#view = "kiosk"
+
+# Desktop only: fullscreen window, and UI scale factor.
+#fullscreen = true
+#scale = 1.0

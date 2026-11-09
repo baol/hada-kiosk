@@ -1,0 +1,223 @@
+import "../../assets/materialdesignicons-webfont.ttf";
+import { Theme } from "../theme.slint";
+
+// A Material Design Icons glyph.
+export component Icon inherits Text {
+    in property <string> glyph;
+    in property <length> size: 24px;
+    text: glyph;
+    font-family: "Material Design Icons";
+    font-size: size;
+    color: Theme.text;
+    vertical-alignment: center;
+    horizontal-alignment: center;
+    width: size + 4px;
+    height: size + 4px;
+}
+
+// Round icon badge, tinted when active.
+export component IconCircle {
+    in property <string> glyph;
+    in property <bool> active;
+    in property <bool> dim;
+    in property <length> size: 40px;
+    width: size;
+    height: size;
+    Rectangle {
+        border-radius: root.size / 2;
+        background: root.active ? Theme.accent.with-alpha(0.18) : Theme.card-raised;
+        Icon {
+            glyph: root.glyph;
+            size: root.size * 0.58;
+            color: root.dim ? Theme.text-faint : (root.active ? Theme.accent : Theme.text-dim);
+        }
+    }
+}
+
+// On/off switch with a 48 px tall touch target.
+export component ToggleSwitch {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> pending;
+    callback toggled();
+    width: 64px;
+    height: 48px;
+    track := Rectangle {
+        width: 52px;
+        height: 30px;
+        border-radius: 15px;
+        background: root.checked ? Theme.primary : Theme.track;
+        opacity: root.enabled ? 1 : 0.4;
+        animate background { duration: 150ms; }
+        knob := Rectangle {
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            y: 4px;
+            x: root.checked ? 26px : 4px;
+            background: root.pending ? Theme.warn : white;
+            animate x { duration: 150ms; easing: ease-out; }
+        }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        clicked => { root.toggled(); }
+    }
+}
+
+// Full-width on/off bar as in Home Assistant's tile `toggle` feature: the
+// knob fills half of the bar and carries a power icon.
+export component ToggleBar {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> pending;
+    callback toggled();
+    height: 42px;
+    horizontal-stretch: 1;
+    min-width: 96px;
+    track := Rectangle {
+        border-radius: 10px;
+        background: root.checked ? Theme.accent.with-alpha(0.25) : Theme.track;
+        opacity: root.enabled ? 1 : 0.4;
+        animate background { duration: 150ms; }
+        knob := Rectangle {
+            width: (parent.width - 8px) / 2;
+            height: parent.height - 8px;
+            y: 4px;
+            x: root.checked ? parent.width / 2 : 4px;
+            border-radius: 7px;
+            background: root.pending ? Theme.warn : (root.checked ? Theme.accent : Theme.card-raised.brighter(0.6));
+            animate x { duration: 150ms; easing: ease-out; }
+            Icon {
+                glyph: root.checked ? "\u{F0425}" : "\u{F0765}";
+                size: 20px;
+                color: root.checked ? #3a2a00 : Theme.text;
+            }
+        }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        clicked => { root.toggled(); }
+    }
+}
+
+// Horizontal slider that reports the value on release only.
+export component ValueSlider {
+    in property <float> value;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <float> step: 1;
+    in property <string> unit;
+    in property <bool> enabled: true;
+    callback changed(float);
+    height: 48px;
+    min-width: 120px;
+    horizontal-stretch: 1;
+    private property <bool> dragging;
+    private property <float> drag-value;
+    property <float> shown: root.dragging ? root.drag-value : root.value;
+    property <float> frac: root.maximum > root.minimum ? clamp((root.shown - root.minimum) / (root.maximum - root.minimum), 0, 1) : 0;
+
+    function value-at(x: length) -> float {
+        return root.quantize(root.minimum + clamp(x / root.width, 0, 1) * (root.maximum - root.minimum));
+    }
+    function quantize(v: float) -> float {
+        if (root.step <= 0) { return v; }
+        return clamp(root.minimum + round((v - root.minimum) / root.step) * root.step, root.minimum, root.maximum);
+    }
+
+    track := Rectangle {
+        y: 6px;
+        height: 36px;
+        border-radius: 18px;
+        background: Theme.track;
+        opacity: root.enabled ? 1 : 0.4;
+        fill := Rectangle {
+            x: 0;
+            width: max(36px, parent.width * root.frac);
+            height: parent.height;
+            border-radius: 18px;
+            background: root.dragging ? Theme.primary.brighter(0.2) : Theme.primary;
+        }
+        Text {
+            text: round(root.shown) + root.unit;
+            color: Theme.text;
+            font-size: Theme.font-s;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.dragging = true;
+                root.drag-value = root.value-at(self.mouse-x);
+            } else if (e.kind == PointerEventKind.up) {
+                if (root.dragging) {
+                    root.dragging = false;
+                    root.changed(root.drag-value);
+                }
+            } else if (e.kind == PointerEventKind.cancel) {
+                root.dragging = false;
+            }
+        }
+        moved => {
+            if (root.dragging) { root.drag-value = root.value-at(self.mouse-x); }
+        }
+    }
+}
+
+// Flat button with icon and/or label.
+export component IconButton {
+    in property <string> glyph;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <bool> accent;
+    in property <bool> compact;
+    callback clicked();
+    min-height: 44px;
+    min-width: root.compact ? 48px : 72px;
+    horizontal-stretch: root.compact ? 0 : 1;
+    Rectangle {
+        border-radius: 10px;
+        background: ta.pressed ? Theme.pressed : Theme.card-raised;
+        opacity: root.enabled ? 1 : 0.4;
+        HorizontalLayout {
+            alignment: center;
+            spacing: 6px;
+            padding-left: 10px;
+            padding-right: 10px;
+            if root.glyph != "": Icon {
+                glyph: root.glyph;
+                size: 22px;
+                color: root.accent ? Theme.primary : Theme.text;
+            }
+            if root.label != "": Text {
+                text: root.label;
+                color: Theme.text;
+                font-size: Theme.font-m;
+                vertical-alignment: center;
+            }
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Card container.
+export component Card inherits Rectangle {
+    background: Theme.card;
+    border-radius: Theme.radius;
+}
+
+export component CardTitle inherits Text {
+    color: Theme.text;
+    font-size: Theme.font-l;
+    font-weight: 500;
+    overflow: elide;
+    vertical-alignment: center;
+}

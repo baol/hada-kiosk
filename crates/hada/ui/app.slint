@@ -1,0 +1,211 @@
+import { Theme } from "theme.slint";
+import { Icon } from "widgets/widgets.slint";
+import { CardView, Actions } from "cards/cards.slint";
+import { RowData, FeatureData, LeafCard, CardData, CardRow, ColumnData, SectionRow, ViewData, ControlKind, SliderKind, ActionKind } from "types.slint";
+
+export { RowData, FeatureData, LeafCard, CardData, CardRow, ColumnData, SectionRow, ViewData, ControlKind, SliderKind, ActionKind } from "types.slint";
+export { Actions } from "cards/cards.slint";
+
+component Badge {
+    in property <RowData> data;
+    height: 36px;
+    Rectangle {
+        border-radius: 18px;
+        background: Theme.card;
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 14px;
+            spacing: 6px;
+            Icon { glyph: root.data.glyph; size: 20px; color: root.data.active ? Theme.accent : Theme.text-dim; }
+            if root.data.name != "": Text { text: root.data.name; color: Theme.text-dim; font-size: Theme.font-s; vertical-alignment: center; }
+            Text { text: root.data.state-text; color: Theme.text; font-size: Theme.font-m; font-weight: 500; vertical-alignment: center; }
+        }
+    }
+}
+
+component RailItem {
+    in property <ViewData> view;
+    in property <bool> selected;
+    in property <bool> horizontal;
+    callback clicked();
+    min-width: root.horizontal ? 64px : 88px;
+    min-height: root.horizontal ? 56px : 72px;
+    Rectangle {
+        border-radius: 10px;
+        background: root.selected ? Theme.card-raised : (ta.pressed ? Theme.pressed : transparent);
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            padding: 6px;
+            Icon {
+                glyph: root.view.glyph;
+                size: 26px;
+                color: root.selected ? Theme.accent : Theme.text-dim;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.view.title;
+                color: root.selected ? Theme.text : Theme.text-dim;
+                font-size: 12px;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+component StatusChip {
+    in property <string> text;
+    in property <bool> ok;
+    height: 28px;
+    Rectangle {
+        border-radius: 14px;
+        background: Theme.card;
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 12px;
+            spacing: 6px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle { width: 8px; height: 8px; border-radius: 4px; background: root.ok ? Theme.ok : Theme.danger; }
+            }
+            Text { text: root.text; color: Theme.text-dim; font-size: 12px; vertical-alignment: center; overflow: elide; }
+        }
+    }
+}
+
+// A card inside a section row: width is `span` of 12 grid units, height fixed
+// when the grid options say so.
+component SectionCard {
+    in property <CardData> card;
+    property <length> fixed: root.card.leaf.fixed-rows * Theme.section-row + (root.card.leaf.fixed-rows - 1) * Theme.gap;
+    in property <length> row-width;
+    property <length> unit: (root.row-width - 11 * Theme.gap) / 12;
+    width: root.unit * root.card.leaf.span + (root.card.leaf.span - 1) * Theme.gap;
+    min-height: root.card.leaf.fixed-rows > 0 ? root.fixed : 0px;
+    max-height: root.card.leaf.fixed-rows > 0 ? root.fixed : 100000px;
+    vertical-stretch: 0;
+    CardView { card: root.card; }
+}
+
+// One section (or masonry column): title + rows of cards. Width is `span` of
+// `total` grid units of the enclosing row.
+component SectionView {
+    in property <ColumnData> section;
+    in property <int> total: 1;
+    in property <length> row-width;
+    property <length> unit: (root.row-width - (root.total - 1) * Theme.pad) / max(1, root.total);
+    width: root.unit * root.section.span + (root.section.span - 1) * Theme.pad;
+    VerticalLayout {
+        spacing: Theme.gap;
+        alignment: start;
+        if root.section.title != "": Text {
+            text: root.section.title;
+            color: Theme.text;
+            font-size: Theme.font-l;
+            font-weight: 500;
+            height: 36px;
+            vertical-alignment: center;
+        }
+        for r in root.section.rows: HorizontalLayout {
+            spacing: Theme.gap;
+            alignment: start;
+            for c in r.cards: SectionCard { card: c; row-width: root.width; }
+        }
+    }
+}
+
+component Content inherits Flickable {
+    in property <ViewData> view;
+    in property <length> avail-width;
+    content-height: max(root.height, body.preferred-height);
+    body := VerticalLayout {
+        width: root.width;
+        padding: Theme.pad;
+        spacing: Theme.pad;
+        alignment: start;
+        if root.view.badges.length > 0: HorizontalLayout {
+            spacing: Theme.gap;
+            alignment: start;
+            for b in root.view.badges: Badge { data: b; }
+        }
+        for sr in root.view.rows: HorizontalLayout {
+            spacing: Theme.pad;
+            alignment: start;
+            for s in sr.sections: SectionView { section: s; total: root.view.max-columns; row-width: root.avail-width - 2 * Theme.pad; }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "hada";
+    background: Theme.bg;
+    default-font-size: Theme.font-m;
+    preferred-width: 1024px;
+    preferred-height: 600px;
+
+    in property <[ViewData]> views: [];
+    in-out property <int> current-view: 0;
+    in property <string> status-text: "Connecting…";
+    in property <bool> connected: false;
+    in property <bool> show-status: true;
+    // Entity actions arrive through the `Actions` global (see cards.slint).
+    // Fired whenever the content width changes so Rust can re-balance masonry
+    // columns and regroup sections.
+    callback relayout(width: length);
+
+    property <bool> portrait: root.width < root.height;
+    property <ViewData> view: root.views[root.current-view];
+    // Width available to the content. Derived from the window size (not from
+    // the layout), so card widths computed from it cannot form a binding loop.
+    out property <length> avail: root.portrait ? root.width : root.width - 104px;
+    // Later size changes (desktop windows). The initial size is read from Rust
+    // after the callback is connected: `init` runs before that, inside new().
+    changed avail => { root.relayout(root.avail); }
+
+    if !root.portrait: HorizontalLayout {
+        Rectangle {
+            width: 104px;
+            background: Theme.rail;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 4px;
+                alignment: start;
+                for v[i] in root.views: RailItem {
+                    view: v;
+                    selected: i == root.current-view;
+                    clicked => { root.current-view = i; }
+                }
+                Rectangle { vertical-stretch: 1; }
+                if root.show-status: StatusChip { text: root.status-text; ok: root.connected; }
+            }
+        }
+        Content {
+            view: root.view;
+            avail-width: root.avail;
+        }
+    }
+    if root.portrait: VerticalLayout {
+        Rectangle {
+            height: 72px;
+            background: Theme.rail;
+            HorizontalLayout {
+                padding: 8px;
+                spacing: 4px;
+                for v[i] in root.views: RailItem {
+                    view: v;
+                    horizontal: true;
+                    selected: i == root.current-view;
+                    clicked => { root.current-view = i; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if root.show-status: VerticalLayout { alignment: center; StatusChip { text: root.status-text; ok: root.connected; } }
+            }
+        }
+        Content {
+            view: root.view;
+            avail-width: root.avail;
+        }
+    }
+}

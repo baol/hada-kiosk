@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="hada: native Home Assistant dashboards for kiosks">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14171f"/>
+      <stop offset="1" stop-color="#0c0e12"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="320" rx="24" fill="url(#bg)"/>
+
+  <!-- a small wall panel: six tiles, two of them on -->
+  <g transform="translate(96 56)">
+    <rect width="208" height="208" rx="20" fill="#1b1f27" stroke="#2b303b" stroke-width="2"/>
+    <g fill="#242a35">
+      <rect x="16" y="16" width="84" height="52" rx="10"/>
+      <rect x="16" y="78" width="84" height="52" rx="10"/>
+      <rect x="108" y="78" width="84" height="52" rx="10"/>
+      <rect x="16" y="140" width="84" height="52" rx="10"/>
+    </g>
+    <g fill="#ffb300">
+      <rect x="108" y="16" width="84" height="52" rx="10"/>
+      <rect x="108" y="140" width="84" height="52" rx="10"/>
+    </g>
+    <g fill="#3a2a00">
+      <circle cx="170" cy="42" r="9"/>
+      <circle cx="170" cy="166" r="9"/>
+    </g>
+    <g fill="#9aa1ae">
+      <circle cx="38" cy="42" r="9"/>
+      <circle cx="38" cy="104" r="9"/>
+      <circle cx="130" cy="104" r="9"/>
+      <circle cx="38" cy="166" r="9"/>
+    </g>
+  </g>
+
+  <text x="372" y="170" fill="#e9ebf0" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif" font-size="104" font-weight="700" letter-spacing="-2">hada</text>
+  <text x="376" y="222" fill="#9aa1ae" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif" font-size="28">Native Home Assistant dashboards for wall panels and kiosks.</text>
+  <text x="376" y="262" fill="#ffb300" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif" font-size="24">No browser. One small binary. Boots straight to your dashboard.</text>
+</svg>

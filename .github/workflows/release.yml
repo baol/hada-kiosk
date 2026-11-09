@@ -1,0 +1,181 @@
+name: Release
+
+# Publish: push a tag like v0.1.0 (or create the release in the GitHub UI): the
+# binaries, packages and installer are built and attached to that release.
+# Rebuild: run this workflow by hand with an existing release tag: the tag is moved
+# to the commit it runs on and the files of that release are replaced.
+# Run it by hand without a tag to only build and upload the files as artifacts.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release to rebuild from this commit (e.g. v0.1.0); empty = build only"
+        required: false
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+  # Same tools as the build verified on Raspberry Pi OS: zig links against glibc 2.36
+  # (Debian 12 / Raspberry Pi OS Bookworm and newer).
+  ZIGLANG_VERSION: "0.17.1"
+  ZIGBUILD_VERSION: "0.24.1"
+  GLIBC: "2.36"
+  # The release tag: pushed tag, or the tag given when run by hand.
+  TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        arch: [aarch64, x86_64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch }}-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.arch }}
+      - name: Zig and cargo-zigbuild
+        run: |
+          pip install "ziglang==$ZIGLANG_VERSION"
+          cargo install cargo-zigbuild --version "$ZIGBUILD_VERSION" --locked
+
+      - name: Libraries to link against (x86_64)
+        if: matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig-dev libinput-dev libudev-dev libxkbcommon-dev libseat-dev
+          echo "RUSTFLAGS=-C link-arg=-Wl,--allow-shlib-undefined" >> "$GITHUB_ENV"
+
+      - name: Libraries to link against (aarch64 sysroot from Ubuntu ports)
+        if: matrix.arch == 'aarch64'
+        run: |
+          sudo dpkg --add-architecture arm64
+          # Existing sources serve amd64 only; arm64 packages come from ports.ubuntu.com.
+          for f in /etc/apt/sources.list.d/*.sources; do
+            grep -q '^Architectures:' "$f" || sudo sed -i 's/^Types: deb$/Types: deb\nArchitectures: amd64/' "$f"
+          done
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
+            [ -f "$f" ] && sudo sed -i -E 's/^deb (\[[^]]*\] )?/deb [arch=amd64] /' "$f"
+          done
+          . /etc/os-release
+          printf 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports %s main universe\ndeb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports %s-updates main universe\n' \
+            "$VERSION_CODENAME" "$VERSION_CODENAME" | sudo tee /etc/apt/sources.list.d/arm64-ports.list
+          sudo apt-get update
+          SYS="$RUNNER_TEMP/sysroot-arm64"
+          mkdir -p "$SYS/debs" && cd "$SYS/debs"
+          for p in libinput-dev libinput10 libudev-dev libudev1 libxkbcommon-dev libxkbcommon0 \
+                   libseat-dev libseat1 libfontconfig-dev libfontconfig1 libfreetype-dev libfreetype6 \
+                   libexpat1-dev libexpat1 libpng-dev libpng16-16t64 libbrotli-dev libbrotli1 \
+                   zlib1g-dev zlib1g libmtdev1t64 libevdev2 libwacom9 libgudev-1.0-0; do
+            apt-get download "$p:arm64"
+          done
+          for d in *.deb; do dpkg-deb -x "$d" "$SYS/root"; done
+          R="$SYS/root"
+          {
+            echo "PKG_CONFIG_ALLOW_CROSS=1"
+            echo "PKG_CONFIG_SYSROOT_DIR=$R"
+            echo "PKG_CONFIG_LIBDIR=$R/usr/lib/aarch64-linux-gnu/pkgconfig:$R/usr/share/pkgconfig"
+            echo "RUSTFLAGS=-L $R/usr/lib/aarch64-linux-gnu -C link-arg=-Wl,--allow-shlib-undefined"
+          } >> "$GITHUB_ENV"
+
+      - name: Build (one binary for desktop window and console kiosk)
+        run: |
+          cargo zigbuild --release -p hada --no-default-features --features window,kiosk \
+            --target "${{ matrix.arch }}-unknown-linux-gnu.$GLIBC" --target-dir target/release-build
+          mkdir -p dist
+          cp "target/release-build/${{ matrix.arch }}-unknown-linux-gnu/release/hada" "dist/hada-${{ matrix.arch }}-linux-gnu"
+
+      - name: Check the binary
+        run: |
+          B="dist/hada-${{ matrix.arch }}-linux-gnu"
+          file "$B" | tee /dev/stderr | grep -q "$( [ "${{ matrix.arch }}" = aarch64 ] && echo 'ARM aarch64' || echo 'x86-64')"
+          NEED="$(readelf -V "$B" | grep -oE 'GLIBC_2\.[0-9]+' | sort -t. -k2 -n -u | tail -1)"
+          echo "highest glibc symbol: $NEED"
+          [ "${NEED#GLIBC_2.}" -le "${GLIBC#2.}" ]
+          readelf -d "$B" | grep NEEDED
+          (cd dist && sha256sum "hada-${{ matrix.arch }}-linux-gnu" > "hada-${{ matrix.arch }}-linux-gnu.sha256" && cat ./*.sha256)
+
+      - name: Debian package
+        run: |
+          if [ -n "$TAG" ]; then V="$TAG"
+          else V="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)~dev"; fi
+          DEBARCH="$( [ "${{ matrix.arch }}" = aarch64 ] && echo arm64 || echo amd64 )"
+          scripts/make-deb.sh "dist/hada-${{ matrix.arch }}-linux-gnu" "$V" "$DEBARCH" "dist/hada-$DEBARCH.deb"
+          dpkg-deb -I "dist/hada-$DEBARCH.deb" | grep -E "Package|Version|Architecture|Depends|Recommends"
+
+      - name: Smoke test on x86_64, install the package and open a window
+        if: matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb
+          # Exactly as in the README (with recommends: the window needs X11/Wayland client libraries).
+          sudo apt install -y ./dist/hada-amd64.deb
+          hada --version
+          # A window on a virtual X display, offline, with the demo dashboard: must still be running after 8 s.
+          set +e
+          xvfb-run -a timeout 8 hada --url http://127.0.0.1:9 --token x --dashboard tests/fixtures/dashboard.yaml
+          code=$?
+          echo "exit code $code (124 = still running when stopped)"
+          [ "$code" -eq 124 ]
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hada-${{ matrix.arch }}-linux-gnu
+          path: dist/*
+
+  release:
+    if: github.event_name == 'push' || inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Move the tag to this commit (when rebuilding an existing release)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" > /dev/null   # only existing releases can be rebuilt
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+      - name: Installer pinned to this release
+        run: |
+          sed "s/^HADA_VERSION=\"\${HADA_VERSION:-latest}\"/HADA_VERSION=\"\${HADA_VERSION:-$TAG}\"/" \
+            deploy/install-kiosk.sh > dist/install-kiosk.sh
+          grep -n '^HADA_VERSION=' dist/install-kiosk.sh
+          grep -q "HADA_VERSION:-$TAG" dist/install-kiosk.sh
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<NOTES
+          One binary per architecture runs in a desktop window or full screen on the console (kiosk).
+          64-bit Linux with glibc ≥ $GLIBC: Raspberry Pi OS Bookworm, Debian 12, Ubuntu 24.04 or newer.
+
+          - \`hada-arm64.deb\`, \`hada-amd64.deb\`: packages for Debian, Ubuntu and Raspberry Pi OS
+          - \`hada-aarch64-linux-gnu\`, \`hada-x86_64-linux-gnu\`: plain binaries (+ \`.sha256\`)
+          - \`install-kiosk.sh\`: kiosk installer pinned to this release
+
+          See the README for the one-line install, the options and how to undo kiosk mode.
+          NOTES
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # Existing release (created in the UI, or being rebuilt): replace the files,
+            # and fill in the notes if the release has none.
+            gh release upload "$TAG" dist/* --clobber
+            if [ -z "$(gh release view "$TAG" --json body --jq .body)" ]; then
+              gh release edit "$TAG" --notes-file notes.md
+            fi
+          else
+            gh release create "$TAG" --title "hada $TAG" --notes-file notes.md dist/*
+          fi
+          gh release view "$TAG" --json assets --jq '.assets[].name'

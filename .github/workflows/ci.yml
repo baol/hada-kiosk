@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig-dev libinput-dev libudev-dev libxkbcommon-dev libseat-dev \
+            libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev libxi-dev \
+            fonts-noto-core shellcheck
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --features screenshot -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --features screenshot
+      - name: Kiosk build (DRM/KMS backend)
+        run: cargo check -p hada --no-default-features --features kiosk
+      - name: Release feature set (window + kiosk)
+        run: cargo check -p hada --no-default-features --features window,kiosk
+      - name: Shell scripts
+        run: shellcheck deploy/install-kiosk.sh scripts/screenshots.sh scripts/make-deb.sh
+      - name: Screenshots of the demo dashboard
+        run: scripts/screenshots.sh screenshots
+      - uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: screenshots/*.png
