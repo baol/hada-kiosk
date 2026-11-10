@@ -12,7 +12,9 @@ export component Icon inherits Text {
     vertical-alignment: center;
     horizontal-alignment: center;
     width: size + 4px;
-    height: size + 4px;
+    // Not a fixed height: in a taller row the text box fills the row and the
+    // glyph is centred (a fixed-height child would sit at the top).
+    min-height: size + 4px;
 }
 
 // Round icon badge, tinted when active.
@@ -89,7 +91,7 @@ export component ToggleBar {
             background: root.pending ? Theme.warn : (root.checked ? Theme.accent : Theme.card-raised.brighter(0.6));
             animate x { duration: 150ms; easing: ease-out; }
             Icon {
-                glyph: root.checked ? "\u{F0425}" : "\u{F0765}";
+                glyph: "\u{F0425}";  // mdi:power; position and colour show the state
                 size: 20px;
                 color: root.checked ? #3a2a00 : Theme.text;
             }

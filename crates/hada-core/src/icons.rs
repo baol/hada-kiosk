@@ -74,7 +74,12 @@ impl IconResolver {
         }
         let domain = domain_of(entity_id);
         let state = st.map(|s| s.state.as_str()).unwrap_or("");
-        let device_class = st.and_then(|s| s.device_class());
+        let device_class = st.and_then(|s| s.device_class()).or_else(|| {
+            // A sensor without a device class that reports a temperature unit
+            // (e.g. a template sensor) gets the thermometer, not the generic eye.
+            let unit = st.and_then(|s| s.unit())?;
+            (domain == "sensor" && matches!(unit, "°C" | "°F" | "K")).then_some("temperature")
+        });
         if let Some(domain_icons) = self.resources.resources.get(domain) {
             let entry = device_class
                 .and_then(|dc| domain_icons.get(dc))
@@ -306,6 +311,26 @@ mod tests {
     use serde_json::json;
 
     const FIXTURE: &str = include_str!("../../../tests/fixtures/icons.json");
+
+    #[test]
+    fn unclassed_temperature_sensor_gets_thermometer() {
+        let r = IconResolver::new(IconResources::from_json_str(FIXTURE).unwrap());
+        let builtin = IconResolver::default();
+        let t = EntityState::new("23").with_attr("unit_of_measurement", json!("°C"));
+        assert_eq!(r.resolve("sensor.t", Some(&t), None), "mdi:thermometer");
+        assert_eq!(
+            builtin.resolve("sensor.t", Some(&t), None),
+            "mdi:thermometer"
+        );
+        let watts = EntityState::new("5").with_attr("unit_of_measurement", json!("W"));
+        assert_eq!(r.resolve("sensor.w", Some(&watts), None), "mdi:eye");
+        let own = t.clone().with_attr("icon", json!("mdi:home-thermometer"));
+        assert_eq!(
+            r.resolve("sensor.t", Some(&own), None),
+            "mdi:home-thermometer"
+        );
+        assert_eq!(r.resolve("sensor.t", Some(&t), Some("mdi:sun")), "mdi:sun");
+    }
 
     #[test]
     fn resolves_from_ha_resources() {
