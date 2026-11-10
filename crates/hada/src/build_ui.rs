@@ -319,7 +319,7 @@ pub fn calendar_rows(
         } else {
             match end {
                 Some(en) if en.has_time && en.same_day(&start) => {
-                    format!("{} - {}", start.time_label(), en.time_label())
+                    format!("{} – {}", start.time_label(), en.time_label())
                 }
                 _ => start.time_label(),
             }

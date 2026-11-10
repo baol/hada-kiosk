@@ -135,51 +135,6 @@ export component EntityRow {
                 clicked => { Actions.action(root.data.entity-id, ActionKind.row-action, 0, root.card-id); }
             }
         }
-        // 6: calendar day header (name = weekday, state-text = full date)
-        if root.data.kind == 6: VerticalLayout {
-            padding-top: 6px;
-            Rectangle { height: 1px; background: Theme.divider; }
-            HorizontalLayout {
-                height: 34px;
-                spacing: 8px;
-                Text {
-                    text: root.data.name;
-                    color: root.data.active ? Theme.accent : Theme.text;
-                    font-size: Theme.font-s;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: root.data.state-text;
-                    color: root.data.active ? Theme.accent : Theme.text-dim;
-                    font-size: Theme.font-s;
-                    vertical-alignment: center;
-                }
-            }
-        }
-        // 7: calendar event (name = summary, state-text = time, secondary = location)
-        if root.data.kind == 7: HorizontalLayout {
-            spacing: 10px;
-            min-height: 40px;
-            Text {
-                text: root.data.state-text;
-                color: Theme.text-dim;
-                font-size: Theme.font-s;
-                vertical-alignment: center;
-                width: 104px;
-            }
-            VerticalLayout {
-                alignment: center;
-                Rectangle { width: 8px; height: 8px; border-radius: 4px; background: Theme.primary; }
-            }
-            VerticalLayout {
-                alignment: center;
-                horizontal-stretch: 1;
-                Text { text: root.data.name; color: Theme.text; font-size: Theme.font-m; overflow: elide; }
-                if root.data.secondary != "": StateText { text: root.data.secondary; }
-            }
-        }
         if root.data.kind == 4: VerticalLayout {
             padding-top: 4px;
             padding-bottom: 4px;
@@ -447,12 +402,81 @@ export component GaugeCard inherits Card {
     }
 }
 
+// One line of a calendar card. Kind 6: day header (name = weekday, state-text =
+// date, active = today), also used for "No events" / "Loading…". Kind 7: event
+// (name = summary, state-text = time, secondary = location, active = today).
+component CalendarRow inherits VerticalLayout {
+    in property <RowData> data;
+    in property <bool> first;
+    if root.data.kind == 6: VerticalLayout {
+        padding-top: root.first ? 4px : 10px;
+        spacing: 8px;
+        if !root.first: Rectangle { height: 1px; background: Theme.divider; }
+        HorizontalLayout {
+            height: 22px;
+            spacing: 8px;
+            Text {
+                text: root.data.name;
+                color: root.data.active ? Theme.accent : Theme.text;
+                font-size: Theme.font-s;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Text {
+                text: root.data.state-text;
+                color: root.data.active ? Theme.accent : Theme.text-dim;
+                font-size: Theme.font-s;
+                vertical-alignment: center;
+            }
+        }
+    }
+    // Time column, a 3 px bar spanning the event, then summary and location.
+    // The time sits on the summary's line, also when a location follows.
+    if root.data.kind == 7: HorizontalLayout {
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 10px;
+        Text {
+            text: root.data.state-text;
+            color: Theme.text-dim;
+            font-size: Theme.font-s;
+            width: 92px;
+            height: 22px;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 3px;
+            border-radius: 1.5px;
+            background: root.data.active ? Theme.accent : Theme.primary;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            Text {
+                text: root.data.name;
+                color: Theme.text;
+                font-size: Theme.font-m;
+                height: 22px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            if root.data.secondary != "": Text {
+                text: root.data.secondary;
+                color: Theme.text-dim;
+                font-size: Theme.font-s;
+                overflow: elide;
+            }
+        }
+    }
+}
+
 export component CalendarCard inherits Card {
     in property <LeafCard> card;
     VerticalLayout {
         padding: Theme.pad;
         padding-top: 4px;
-        spacing: 2px;
+        spacing: 0px;
         HorizontalLayout {
             min-height: 48px;
             spacing: 8px;
@@ -464,7 +488,7 @@ export component CalendarCard inherits Card {
                 vertical-alignment: center;
             }
         }
-        for r in root.card.rows: EntityRow { data: r; card-id: root.card.card-id; }
+        for r[i] in root.card.rows: CalendarRow { data: r; first: i == 0; }
     }
 }
 
