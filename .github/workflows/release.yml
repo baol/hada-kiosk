@@ -1,13 +1,19 @@
 name: Release
 
-# Publish: push a tag like v0.1.0 (or create the release in the GitHub UI): the
-# binaries, packages and installer are built and attached to that release.
+# Release: bump `version` in Cargo.toml and merge to main. When CI passes on main and
+# no tag v<version> exists yet, it is created on that commit and the binaries,
+# packages and installer are built and published as release v<version>.
+# By hand: push a tag like v0.1.0 (or create the release in the GitHub UI).
 # Rebuild: run this workflow by hand with an existing release tag: the tag is moved
 # to the commit it runs on and the files of that release are replaced.
 # Run it by hand without a tag to only build and upload the files as artifacts.
 on:
   push:
     tags: ["v*"]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -22,17 +28,58 @@ env:
   ZIGLANG_VERSION: "0.17.1"
   ZIGBUILD_VERSION: "0.24.1"
   GLIBC: "2.36"
-  # The release tag: pushed tag, or the tag given when run by hand.
-  TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
 
 jobs:
+  # What to build: the release tag (empty = build only) and the commit.
+  prepare:
+    # After CI: only a successful run for a push to main.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.what.outputs.tag }}
+      sha: ${{ steps.what.outputs.sha }}
+      build: ${{ steps.what.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: what
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSHED_TAG: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          BUILD=true
+          case "$EVENT" in
+            push) TAG="$PUSHED_TAG" ;;
+            workflow_dispatch) TAG="$INPUT_TAG" ;;
+            workflow_run)
+              TAG="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+              if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+                echo "$TAG already exists: nothing to release"
+                TAG=""; BUILD=false
+              else
+                echo "new version: releasing $TAG from $SHA"
+              fi ;;
+          esac
+          { echo "tag=$TAG"; echo "sha=$SHA"; echo "build=$BUILD"; } | tee -a "$GITHUB_OUTPUT"
+
   build:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
     strategy:
       matrix:
         arch: [aarch64, x86_64]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.arch }}-unknown-linux-gnu
@@ -129,13 +176,18 @@ jobs:
           path: dist/*
 
   release:
-    if: github.event_name == 'push' || inputs.tag != ''
-    needs: build
+    needs: [prepare, build]
+    if: needs.prepare.outputs.tag != ''
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      SHA: ${{ needs.prepare.outputs.sha }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -146,8 +198,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view "$TAG" > /dev/null   # only existing releases can be rebuilt
-          git tag -f "$TAG" "$GITHUB_SHA"
+          git tag -f "$TAG" "$SHA"
           git push -f origin "refs/tags/$TAG"
+      - name: Tag the new version (after CI on main)
+        if: github.event_name == 'workflow_run'
+        run: |
+          git tag "$TAG" "$SHA"
+          git push origin "refs/tags/$TAG"
       - name: Installer pinned to this release
         run: |
           sed "s/^HADA_VERSION=\"\${HADA_VERSION:-latest}\"/HADA_VERSION=\"\${HADA_VERSION:-$TAG}\"/" \

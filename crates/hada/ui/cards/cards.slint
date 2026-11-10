@@ -468,6 +468,84 @@ export component CalendarCard inherits Card {
     }
 }
 
+// `weather-forecast`: title = name, subtitle = condition, value-text = temperature,
+// detail = humidity/wind or the configured attribute; rows = forecast columns.
+// show-state = show_current, show-icon = show_forecast.
+export component WeatherCard inherits Card {
+    in property <LeafCard> card;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 12px;
+        if root.card.show-state: HorizontalLayout {
+            spacing: 12px;
+            Icon { glyph: root.card.glyph; size: 52px; }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.card.subtitle;
+                    color: Theme.text;
+                    font-size: Theme.font-l;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.card.title;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-s;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.card.value-text;
+                    color: Theme.text;
+                    font-size: Theme.font-xl;
+                    font-weight: 300;
+                    horizontal-alignment: right;
+                }
+                if root.card.detail != "": Text {
+                    text: root.card.detail;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-s;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+        if root.card.show-icon && root.card.rows.length > 0: HorizontalLayout {
+            spacing: 4px;
+            for r in root.card.rows: VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 40px;
+                spacing: 2px;
+                Text {
+                    text: r.name;
+                    color: r.active ? Theme.text-dim : Theme.text-faint;
+                    font-size: Theme.font-s;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Icon { glyph: r.glyph; size: 28px; }
+                }
+                Text {
+                    text: r.state-text;
+                    color: Theme.text;
+                    font-size: Theme.font-m;
+                    horizontal-alignment: center;
+                }
+                if r.secondary != "": Text {
+                    text: r.secondary;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-s;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}
+
 export component MarkdownCard inherits Card {
     in property <LeafCard> card;
     VerticalLayout {
@@ -544,6 +622,7 @@ export component LeafCardView inherits VerticalLayout {
     if root.card.kind == 7: ButtonCard { card: root.card; }
     if root.card.kind == 8 || root.card.kind == 5: PlaceholderCard { card: root.card; }
     if root.card.kind == 9: CalendarCard { card: root.card; }
+    if root.card.kind == 10: WeatherCard { card: root.card; }
 }
 
 // A `grid` card: children in rows of `grid-columns` (positions from Rust).

@@ -50,6 +50,22 @@ pub const KEPT_ATTRIBUTES: &[&str] = &[
     "options",
     "assumed_state",
     "restored",
+    // weather
+    "temperature_unit",
+    "apparent_temperature",
+    "humidity",
+    "pressure",
+    "pressure_unit",
+    "wind_speed",
+    "wind_speed_unit",
+    "wind_bearing",
+    "wind_gust_speed",
+    "precipitation_unit",
+    "visibility",
+    "visibility_unit",
+    "dew_point",
+    "cloud_coverage",
+    "uv_index",
 ];
 
 #[derive(Debug, Clone, PartialEq)]

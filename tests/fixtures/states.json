@@ -569,8 +569,16 @@
   "weather.home": {
    "a": {
     "friendly_name": "Home",
+    "temperature": 14.2,
+    "temperature_unit": "°C",
     "humidity": 71,
-    "temperature": 14.2
+    "pressure": 1016.4,
+    "pressure_unit": "hPa",
+    "wind_speed": 12.6,
+    "wind_speed_unit": "km/h",
+    "wind_bearing": 225,
+    "precipitation_unit": "mm",
+    "supported_features": 3
    },
    "c": "01DEMO",
    "lc": 1794207600.0,

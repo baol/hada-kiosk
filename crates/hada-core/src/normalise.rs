@@ -238,6 +238,29 @@ pub fn card(c: &CardConfig) -> CardNode {
                 grid_opts(c, SECTION_COLUMNS, None),
             )
         }
+        "weather-forecast" => {
+            let id = c.entity.clone().unwrap_or_default();
+            let forecast_type = c.forecast_type.as_deref().and_then(|t| {
+                let parsed = ForecastType::parse(t);
+                if parsed.is_none() {
+                    tracing::warn!("unknown forecast_type {t:?}; using the first supported one");
+                }
+                parsed
+            });
+            (
+                CardKind::Weather {
+                    entity: entity_ref(&id, &c.name, &c.icon),
+                    show_current: c.show_current.unwrap_or(true),
+                    show_forecast: c.show_forecast.unwrap_or(true),
+                    forecast_type,
+                    display: WeatherDisplay {
+                        secondary_attribute: c.secondary_info_attribute.clone(),
+                        round_temperature: c.round_temperature.unwrap_or(false),
+                    },
+                },
+                grid_opts(c, SECTION_COLUMNS, None),
+            )
+        }
         "button" => {
             let entity = c
                 .entity
@@ -505,7 +528,26 @@ mod tests {
             .filter(|c| matches!(c.kind, CardKind::Unsupported { .. }))
             .map(|c| c.raw_type.as_str())
             .collect();
-        assert_eq!(unsupported, vec!["map", "weather-forecast"]);
+        assert_eq!(unsupported, vec!["map"]);
+        let weather = cards
+            .iter()
+            .find(|c| c.raw_type == "weather-forecast")
+            .unwrap();
+        match &weather.kind {
+            CardKind::Weather {
+                entity,
+                show_current,
+                show_forecast,
+                forecast_type,
+                display,
+            } => {
+                assert_eq!(&*entity.entity_id, "weather.home");
+                assert!(*show_current && *show_forecast);
+                assert_eq!(*forecast_type, None);
+                assert_eq!(display, &WeatherDisplay::default());
+            }
+            other => panic!("expected a weather card, got {other:?}"),
+        }
         // grid of two media-control cards: grid is supported, children are not.
         let grid = cards.iter().find(|c| c.raw_type == "grid").unwrap();
         match &grid.kind {
@@ -625,6 +667,9 @@ mod tests {
         let cals = d.calendar_entities();
         assert_eq!(cals.get("calendar.family"), Some(&7));
         assert_eq!(cals.len(), 1);
+        let weather = d.weather_entities();
+        assert_eq!(weather.len(), 1);
+        assert_eq!(weather.get("weather.home"), Some(&None));
         assert_eq!(d.view_index("kiosk"), Some(3));
         assert_eq!(d.view_index("home"), Some(0));
         assert_eq!(d.view_index("2"), Some(2));

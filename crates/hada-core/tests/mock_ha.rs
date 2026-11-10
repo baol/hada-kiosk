@@ -1,6 +1,7 @@
 //! Integration test: a mock Home Assistant websocket server speaking the real
 //! protocol (auth handshake, `lovelace/config`, `frontend/get_icons`,
-//! `subscribe_entities` with the compressed state format, `call_service`).
+//! `subscribe_entities` with the compressed state format, `call_service`,
+//! `weather/subscribe_forecast`).
 
 use futures_util::{SinkExt, StreamExt};
 use hada_core::actions::{Action, EntityAction};
@@ -129,6 +130,25 @@ async fn mock_server(listener: TcpListener, token: &'static str) -> Vec<Value> {
                     send(&mut ws, json!({"id": id, "type": "result", "success": true, "result": {"context": {"id": "x"}}})).await;
                 }
             }
+            // Like a weather entity with only an hourly forecast (supported_features = 2).
+            "weather/subscribe_forecast" => {
+                assert_eq!(m["entity_id"], "weather.home");
+                if m["forecast_type"] != "hourly" {
+                    send(&mut ws, json!({"id": id, "type": "result", "success": false, "error": {
+                        "code": "forecast_not_supported",
+                        "message": format!("The weather entity does not support forecast type: {}", m["forecast_type"].as_str().unwrap())}})).await;
+                } else {
+                    send(
+                        &mut ws,
+                        json!({"id": id, "type": "result", "success": true, "result": null}),
+                    )
+                    .await;
+                    send(&mut ws, json!({"id": id, "type": "event", "event": {"type": "hourly", "forecast": [
+                        {"datetime": "2025-11-10T13:00:00+00:00", "condition": "rainy", "temperature": 12.5, "precipitation_probability": 60},
+                        {"datetime": "2025-11-10T14:00:00+00:00", "condition": "cloudy", "temperature": 12.0}
+                    ]}})).await;
+                }
+            }
             "ping" => send(&mut ws, json!({"id": id, "type": "pong"})).await,
             other => panic!("unexpected command {other}"),
         }
@@ -221,6 +241,22 @@ async fn full_session_against_mock_ha() {
                 "events are sorted by start"
             );
             assert_eq!(events[1].location.as_deref(), Some("Main Street 1"));
+        }
+        _ => unreachable!(),
+    }
+
+    // Daily is refused, so the client falls back to the hourly forecast.
+    match recv_until(&mut ev_rx, |e| matches!(e, HaEvent::Forecast { .. })).await {
+        HaEvent::Forecast {
+            entity_id,
+            forecast_type,
+            items,
+        } => {
+            assert_eq!(entity_id, "weather.home");
+            assert_eq!(forecast_type, hada_core::weather::ForecastType::Hourly);
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0].condition.as_deref(), Some("rainy"));
+            assert_eq!(items[0].precipitation_probability, Some(60.0));
         }
         _ => unreachable!(),
     }

@@ -14,7 +14,9 @@ export enum ActionKind {
 }
 
 // Row kinds for entities-like lists.
-// 0 entity, 1 section label, 2 divider, 3 button row, 4 text/link line, 5 attribute (read only)
+// 0 entity, 1 section label, 2 divider, 3 button row, 4 text/link line, 5 attribute (read only),
+// 6 calendar day header, 7 calendar event, 10 forecast column (name = label, state-text = high,
+// secondary = low, active = daytime)
 export struct RowData {
     entity-id: string,
     name: string,
@@ -52,12 +54,16 @@ export struct FeatureData {
     available: bool,
 }
 
-// kind: 0 tile, 1 entities, 2 glance, 3 sensor, 4 gauge, 6 markdown, 7 button, 8 placeholder
+// kind: 0 tile, 1 entities, 2 glance, 3 sensor, 4 gauge, 6 markdown, 7 button, 8 placeholder,
+// 9 calendar, 10 weather
 export struct LeafCard {
     kind: int,
     raw-type: string,
     title: string,
-    subtitle: string,       // e.g. calendar date range
+    subtitle: string,       // e.g. calendar date range, weather condition
+    glyph: string,          // weather: condition icon
+    value-text: string,     // weather: current temperature
+    detail: string,         // weather: line under the temperature
     card-id: int,
     header-toggle: int,     // -1 none, 0 off, 1 on
     tap-toggles: bool,

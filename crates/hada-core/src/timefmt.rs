@@ -81,6 +81,19 @@ pub fn now_unix() -> f64 {
         .unwrap_or(0.0)
 }
 
+/// UTC offset (seconds) of this device's time zone at `ts` (`TZ`, else /etc/localtime).
+pub fn local_offset(ts: f64) -> i64 {
+    use chrono::{Offset, TimeZone};
+    chrono::DateTime::from_timestamp(ts.floor() as i64, 0)
+        .map(|utc| {
+            chrono::Local
+                .offset_from_utc_datetime(&utc.naive_utc())
+                .fix()
+                .local_minus_utc() as i64
+        })
+        .unwrap_or(0)
+}
+
 /// "3 d 4 h", "12 min", "45 s", or "in 2 h" for future timestamps.
 pub fn relative(ts: f64, now: f64) -> String {
     let delta = now - ts;
@@ -506,6 +519,10 @@ impl Locale {
         self.weekdays[((w.days() + 4).rem_euclid(7)) as usize]
     }
 
+    pub fn weekday_short(&self, w: &WallClock) -> &'static str {
+        self.weekdays_short[((w.days() + 4).rem_euclid(7)) as usize]
+    }
+
     /// "9 novembre 2026" / "November 9, 2026"
     pub fn long_date(&self, w: &WallClock) -> String {
         let m = self.months[(w.month.clamp(1, 12) - 1) as usize];
@@ -543,6 +560,7 @@ mod locale_tests {
         let it = Locale::for_language("it_IT");
         let d = WallClock::parse("2026-11-09T13:00:00+01:00").unwrap();
         assert_eq!(it.weekday(&d), "lunedì");
+        assert_eq!(it.weekday_short(&d), it.weekdays_short[1]);
         assert_eq!(it.long_date(&d), "9 novembre 2026");
         let to = WallClock::parse("2026-11-15").unwrap();
         assert_eq!(it.range_label(&d, &to), "9 – 15 nov 2026");

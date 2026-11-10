@@ -174,6 +174,7 @@ pub fn format_state_tr(
         _ => {}
     }
     match domain {
+        "weather" => crate::weather::condition_text(state, tr),
         "sensor" | "number" | "input_number" => {
             if st.device_class() == Some("timestamp") {
                 return timefmt::parse_rfc3339(state)

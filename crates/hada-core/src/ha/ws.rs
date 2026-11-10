@@ -15,6 +15,7 @@ use crate::model::Dashboard;
 use crate::normalise;
 use crate::state::EntitiesEvent;
 use crate::translations::Translations;
+use crate::weather::{parse_forecast, ForecastItem, ForecastType};
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
@@ -72,6 +73,12 @@ pub enum HaEvent {
     Calendar {
         entity_id: String,
         events: Vec<CalendarEvent>,
+    },
+    /// Forecast of one weather entity (`weather/subscribe_forecast`), pushed on every update.
+    Forecast {
+        entity_id: String,
+        forecast_type: ForecastType,
+        items: Vec<ForecastItem>,
     },
     CallFailed {
         call: ServiceCall,
@@ -399,6 +406,11 @@ where
         .iter()
         .map(|(k, v)| (k.to_string(), *v))
         .collect();
+    let weather: Vec<(String, Option<ForecastType>)> = dashboard
+        .weather_entities()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
     emit(HaEvent::Dashboard(dashboard));
 
     // --- icons (best effort) ---------------------------------------------
@@ -448,16 +460,47 @@ where
     let mut pending_calendars: HashMap<u64, String> = HashMap::new();
     let mut calendar_tick = interval(CALENDAR_REFRESH);
     calendar_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // Forecast subscriptions: awaiting their result (with the types left to try), and active.
+    let mut forecast_pending: HashMap<u64, (String, ForecastType, Vec<ForecastType>)> =
+        HashMap::new();
+    let mut forecast_subs: HashMap<u64, (String, ForecastType)> = HashMap::new();
+    for (entity_id, wanted) in &weather {
+        let mut types = ForecastType::candidates(*wanted);
+        let first = types.remove(0);
+        let id = subscribe_forecast(&mut conn, entity_id, first).await?;
+        forecast_pending.insert(id, (entity_id.clone(), first, types));
+    }
 
     loop {
         tokio::select! {
             msg = conn.next_message() => {
                 let msg = msg?;
                 match msg.kind.as_str() {
-                    "event" => handle_event(&msg, sub_id, emit),
+                    "event" => {
+                        let forecast = msg.id.and_then(|id| {
+                            forecast_subs.get(&id).cloned()
+                                .or_else(|| forecast_pending.get(&id).map(|(e, t, _)| (e.clone(), *t)))
+                        });
+                        match forecast {
+                            Some((entity_id, forecast_type)) => handle_forecast_event(&msg, entity_id, forecast_type, emit),
+                            None => handle_event(&msg, sub_id, emit),
+                        }
+                    }
                     "pong" => awaiting_pong = None,
                     "result" => {
-                        if let Some(entity_id) = msg.id.and_then(|id| pending_calendars.remove(&id)) {
+                        if let Some((entity_id, tried, mut rest)) = msg.id.and_then(|id| forecast_pending.remove(&id)) {
+                            if msg.success.unwrap_or(false) {
+                                tracing::info!("{entity_id}: {} forecast subscribed", tried.as_str());
+                                forecast_subs.insert(msg.id.unwrap_or_default(), (entity_id, tried));
+                            } else if !rest.is_empty() {
+                                let next = rest.remove(0);
+                                tracing::info!("{entity_id}: no {} forecast, trying {}", tried.as_str(), next.as_str());
+                                let id = subscribe_forecast(&mut conn, &entity_id, next).await?;
+                                forecast_pending.insert(id, (entity_id, next, rest));
+                            } else {
+                                tracing::warn!("{entity_id}: no forecast available: {:?}", msg.error);
+                            }
+                        } else if let Some(entity_id) = msg.id.and_then(|id| pending_calendars.remove(&id)) {
                             handle_calendar_result(entity_id, &msg, emit);
                         } else if let Some(call) = msg.id.and_then(|id| pending_calls.remove(&id)) {
                             if !msg.success.unwrap_or(false) {
@@ -507,6 +550,34 @@ where
             }
         }
     }
+}
+
+async fn subscribe_forecast(
+    conn: &mut Conn,
+    entity_id: &str,
+    forecast_type: ForecastType,
+) -> Result<u64, SessionError> {
+    conn.send(
+        "weather/subscribe_forecast",
+        json!({ "entity_id": entity_id, "forecast_type": forecast_type.as_str() }),
+    )
+    .await
+}
+
+/// `{"type": "daily", "forecast": [...] | null}`
+fn handle_forecast_event<F: Fn(HaEvent)>(
+    msg: &Incoming,
+    entity_id: String,
+    forecast_type: ForecastType,
+    emit: &F,
+) {
+    let Some(ev) = &msg.event else { return };
+    let items = parse_forecast(ev.get("forecast").unwrap_or(&Value::Null));
+    emit(HaEvent::Forecast {
+        entity_id,
+        forecast_type,
+        items,
+    });
 }
 
 fn handle_calendar_result<F: Fn(HaEvent)>(entity_id: String, msg: &Incoming, emit: &F) {

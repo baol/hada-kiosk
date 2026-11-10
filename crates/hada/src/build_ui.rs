@@ -12,6 +12,7 @@ use hada_core::model::*;
 use hada_core::state::{EntityState, StateStore};
 use hada_core::timefmt::Locale;
 use hada_core::translations::Translations;
+use hada_core::weather::{self, ForecastItem};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -25,6 +26,9 @@ pub const MASONRY_MAX_COLUMNS: usize = 5;
 pub const SECTION_MIN_WIDTH: f32 = 420.0;
 /// Target width of a half-size card (tile) in a section; decides 2, 3 or 4 per row.
 pub const TILE_TARGET_WIDTH: f32 = 240.0;
+/// Width of one forecast column of a weather card, and the most columns shown.
+pub const FORECAST_COLUMN_WIDTH: f32 = 60.0;
+pub const FORECAST_MAX_COLUMNS: usize = 8;
 
 /// Where a card's `LeafCard` lives, so it can be rewritten in place.
 #[derive(Clone)]
@@ -79,6 +83,12 @@ pub enum RowRef {
     },
     /// This entity participates in a card's header toggle.
     Header { card_id: usize },
+    /// Current conditions of a weather card.
+    Weather {
+        slot: CardSlot,
+        entity: EntityRef,
+        display: WeatherDisplay,
+    },
 }
 
 pub struct CardCtx {
@@ -109,6 +119,15 @@ pub struct Built {
     pub index: HashMap<Arc<str>, Vec<RowRef>>,
     /// Calendar entity → calendar cards showing it (rows model, card slot for the subtitle, days).
     pub calendars: HashMap<Arc<str>, Vec<CalendarRef>>,
+    /// Weather entity → forecast rows of the weather cards showing it.
+    pub weather: HashMap<Arc<str>, Vec<WeatherRef>>,
+}
+
+#[derive(Clone)]
+pub struct WeatherRef {
+    pub rows: Rc<VecModel<RowData>>,
+    /// Forecast columns that fit the card.
+    pub max_items: usize,
 }
 
 #[derive(Clone)]
@@ -133,6 +152,9 @@ struct Builder<'a> {
     cards: Vec<CardCtx>,
     index: HashMap<Arc<str>, Vec<RowRef>>,
     calendars: HashMap<Arc<str>, Vec<CalendarRef>>,
+    weather: HashMap<Arc<str>, Vec<WeatherRef>>,
+    /// Estimated width of the card being built (logical px).
+    width_hint: f32,
 }
 
 pub fn build(dash: &Dashboard, ctx: Ctx<'_>, content_width: f32) -> Built {
@@ -141,6 +163,8 @@ pub fn build(dash: &Dashboard, ctx: Ctx<'_>, content_width: f32) -> Built {
         cards: Vec::new(),
         index: HashMap::new(),
         calendars: HashMap::new(),
+        weather: HashMap::new(),
+        width_hint: content_width,
     };
     let mut views = Vec::with_capacity(dash.views.len());
     for v in &dash.views {
@@ -151,6 +175,88 @@ pub fn build(dash: &Dashboard, ctx: Ctx<'_>, content_width: f32) -> Built {
         cards: b.cards,
         index: b.index,
         calendars: b.calendars,
+        weather: b.weather,
+    }
+}
+
+/// Forecast columns that fit a card this wide.
+pub fn forecast_columns(card_width: f32) -> usize {
+    (((card_width - 32.0) / FORECAST_COLUMN_WIDTH).floor() as usize).clamp(1, FORECAST_MAX_COLUMNS)
+}
+
+/// Columns of a weather card's forecast (kind 10). Daily and twice-daily entries
+/// are labelled with the weekday, hourly ones with the time, in this device's time zone.
+pub fn forecast_rows(
+    items: &[ForecastItem],
+    hourly: bool,
+    max: usize,
+    icons: &IconResolver,
+    loc: &Locale,
+) -> Vec<RowData> {
+    use hada_core::timefmt::{local_offset, parse_rfc3339, WallClock};
+    items
+        .iter()
+        .filter_map(|f| {
+            let ts = parse_rfc3339(&f.datetime)?;
+            let when = WallClock::from_unix(ts, local_offset(ts));
+            let label = if hourly {
+                when.time_label()
+            } else {
+                loc.weekday_short(&when).to_string()
+            };
+            let condition = f.condition.as_deref().unwrap_or("");
+            let st = EntityState::new(condition);
+            Some(RowData {
+                kind: 10,
+                name: label.into(),
+                glyph: glyph_str(&icons.resolve("weather.forecast", Some(&st), None)),
+                state_text: f
+                    .temperature
+                    .map(weather::short_temperature)
+                    .unwrap_or_else(|| "—".into())
+                    .into(),
+                secondary: f
+                    .templow
+                    .map(weather::short_temperature)
+                    .unwrap_or_default()
+                    .into(),
+                active: f.is_daytime != Some(false),
+                ..RowData::default()
+            })
+        })
+        .take(max)
+        .collect()
+}
+
+/// Current conditions of a weather card.
+pub fn fill_weather(
+    leaf: &mut LeafCard,
+    entity: &EntityRef,
+    display: &WeatherDisplay,
+    st: Option<&EntityState>,
+    icons: &IconResolver,
+    tr: Option<&Translations>,
+) {
+    leaf.title = display_name(entity, st).into();
+    leaf.glyph = glyph_str(&icons.resolve(&entity.entity_id, st, entity.icon.as_deref()));
+    match st {
+        Some(s) if !s.is_unavailable() => {
+            leaf.subtitle = weather::condition_text(&s.state, tr).into();
+            leaf.value_text = weather::current_temperature(s, display.round_temperature)
+                .unwrap_or_default()
+                .into();
+            leaf.detail = weather::secondary_line(s, display.secondary_attribute.as_deref()).into();
+        }
+        Some(s) => {
+            leaf.subtitle = domain::format_state_tr(&entity.entity_id, s, 0.0, tr).into();
+            leaf.value_text = SharedString::default();
+            leaf.detail = SharedString::default();
+        }
+        None => {
+            leaf.subtitle = "—".into();
+            leaf.value_text = SharedString::default();
+            leaf.detail = SharedString::default();
+        }
     }
 }
 
@@ -353,6 +459,8 @@ impl Builder<'_> {
         let mut sections_key_out: Option<(usize, Vec<u32>)> = None;
         let (rows, masonry, sections_built, columns, is_sections, max_columns) = match &v.layout {
             Layout::Masonry(cards) => {
+                self.width_hint =
+                    (content_width - 24.0) / masonry_columns(content_width) as f32 - 12.0;
                 let wrapped: Vec<(Rc<VecModel<CardData>>, u32)> = cards
                     .iter()
                     .map(|c| {
@@ -388,11 +496,15 @@ impl Builder<'_> {
                     .map(|s| s.column_span.clamp(1, *max_columns))
                     .collect();
                 let key = sections_key(&spans, *max_columns, content_width);
+                let unit = (content_width - 24.0) / key.0 as f32;
                 let built: Vec<(ColumnData, u32)> = kept
                     .iter()
                     .zip(&spans)
                     .zip(&key.1)
-                    .map(|((s, span), per_row)| (self.section(s, *span, *per_row), *span))
+                    .map(|((s, span), per_row)| {
+                        let width = unit * (*span).min(key.0 as u32) as f32;
+                        (self.section(s, *span, *per_row, width), *span)
+                    })
                     .collect();
                 sections_key_out = Some(key);
                 let cols = section_columns(content_width, *max_columns);
@@ -427,7 +539,7 @@ impl Builder<'_> {
         }
     }
 
-    fn section(&mut self, s: &Section, span: u32, per_row: u32) -> ColumnData {
+    fn section(&mut self, s: &Section, span: u32, per_row: u32, width: f32) -> ColumnData {
         let mut rows: Vec<CardRow> = Vec::new();
         let mut current_cards: Vec<CardNode> = Vec::new();
         let mut used = 0u32;
@@ -438,6 +550,7 @@ impl Builder<'_> {
                 }
                 let model = Rc::new(VecModel::from(vec![CardData::default(); cards.len()]));
                 for (i, c) in cards.drain(..).enumerate() {
+                    b.width_hint = width * c.grid.columns.clamp(1, 12) as f32 / 12.0 - 12.0;
                     let data = b.card(&c, Some(CardSlot::Card(model.clone(), i)), true);
                     model.set_row_data(i, data);
                 }
@@ -472,6 +585,8 @@ impl Builder<'_> {
         match &c.kind {
             CardKind::Grid { columns, cards, .. } => {
                 let card_id = self.new_card(slot.clone());
+                let outer_width = self.width_hint;
+                self.width_hint = outer_width / (*columns).max(1) as f32 - 8.0;
                 let children_model =
                     Rc::new(VecModel::from(vec![LeafCard::default(); cards.len()]));
                 for (i, child) in cards.iter().enumerate() {
@@ -491,6 +606,7 @@ impl Builder<'_> {
                     leaf.grid_col = (i % (*columns as usize).max(1)) as i32;
                     children_model.set_row_data(i, leaf);
                 }
+                self.width_hint = outer_width;
                 let mut leaf = LeafCard {
                     kind: 5,
                     raw_type: "grid".into(),
@@ -776,6 +892,44 @@ impl Builder<'_> {
                             slot: slot.clone(),
                             days: *days,
                             title_from: title_from.clone(),
+                        });
+                }
+            }
+            CardKind::Weather {
+                entity,
+                show_current,
+                show_forecast,
+                display,
+                ..
+            } => {
+                leaf.kind = 10;
+                leaf.show_state = *show_current;
+                leaf.show_icon = *show_forecast;
+                fill_weather(
+                    &mut leaf,
+                    entity,
+                    display,
+                    self.ctx.store.get(&entity.entity_id),
+                    self.ctx.icons,
+                    self.ctx.translations,
+                );
+                if let Some(slot) = &slot {
+                    self.index
+                        .entry(entity.entity_id.clone())
+                        .or_default()
+                        .push(RowRef::Weather {
+                            slot: slot.clone(),
+                            entity: entity.clone(),
+                            display: display.clone(),
+                        });
+                }
+                if *show_forecast {
+                    self.weather
+                        .entry(entity.entity_id.clone())
+                        .or_default()
+                        .push(WeatherRef {
+                            rows: rows_model.clone(),
+                            max_items: forecast_columns(self.width_hint),
                         });
                 }
             }
@@ -1143,5 +1297,78 @@ pub fn fill_feature(
     }
     if let Feature::Button { action_name } = feature {
         f.label = action_name.as_deref().unwrap_or("").into();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hada_core::timefmt::LOCALE_IT;
+    use serde_json::json;
+
+    #[test]
+    fn forecast_columns_fit_the_card() {
+        assert_eq!(forecast_columns(100.0), 1);
+        assert_eq!(forecast_columns(441.0), 6);
+        assert_eq!(forecast_columns(2000.0), FORECAST_MAX_COLUMNS);
+    }
+
+    #[test]
+    fn daily_forecast_rows() {
+        let items = hada_core::weather::parse_forecast(&json!([
+            // Midday UTC is the same weekday in every time zone from -11 to +11.
+            {"datetime": "2026-11-09T12:00:00+00:00", "condition": "rainy", "temperature": 12.4, "templow": 7.6},
+            {"datetime": "2026-11-10T12:00:00+00:00", "condition": "sunny", "temperature": 15.0},
+            {"datetime": "2026-11-11T12:00:00+00:00", "condition": "cloudy", "is_daytime": false},
+        ]));
+        let rows = forecast_rows(&items, false, 2, &IconResolver::default(), &LOCALE_IT);
+        assert_eq!(rows.len(), 2, "limited to the columns that fit");
+        assert_eq!(rows[0].kind, 10);
+        assert_eq!(rows[0].name, "lun");
+        assert_eq!(rows[0].state_text, "12°");
+        assert_eq!(rows[0].secondary, "8°");
+        assert_eq!(rows[0].glyph, glyph_str("mdi:weather-rainy"));
+        assert_eq!(rows[1].secondary, "");
+        let all = forecast_rows(&items, false, 8, &IconResolver::default(), &LOCALE_IT);
+        assert_eq!(all[2].state_text, "—");
+        assert!(!all[2].active, "night entry");
+    }
+
+    #[test]
+    fn current_conditions() {
+        let st = EntityState::new("rainy")
+            .with_attr("friendly_name", json!("Home"))
+            .with_attr("temperature", json!(9.46))
+            .with_attr("temperature_unit", json!("°C"))
+            .with_attr("humidity", json!(90));
+        let entity = EntityRef::new("weather.home");
+        let mut leaf = LeafCard::default();
+        let display = WeatherDisplay {
+            secondary_attribute: None,
+            round_temperature: true,
+        };
+        fill_weather(
+            &mut leaf,
+            &entity,
+            &display,
+            Some(&st),
+            &IconResolver::default(),
+            None,
+        );
+        assert_eq!(leaf.title, "Home");
+        assert_eq!(leaf.subtitle, "Rainy");
+        assert_eq!(leaf.value_text, "9 °C");
+        assert_eq!(leaf.detail, "90%");
+        assert_eq!(leaf.glyph, glyph_str("mdi:weather-rainy"));
+        fill_weather(
+            &mut leaf,
+            &entity,
+            &display,
+            None,
+            &IconResolver::default(),
+            None,
+        );
+        assert_eq!(leaf.subtitle, "—");
+        assert_eq!(leaf.value_text, "");
     }
 }
