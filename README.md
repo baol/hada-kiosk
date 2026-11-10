@@ -8,7 +8,7 @@
 |---|---|
 | <img src="docs/screenshots/portrait-kiosk.png" width="300"> | <img src="docs/screenshots/landscape-home.png" width="512"> |
 
-Tiles, entities, glance, sensor, gauge, grid, markdown, button and calendar cards, masonry and sections views, and badges are drawn natively. Other cards appear as placeholders listing their entities' state.
+Tiles, entities, glance, sensor, gauge, grid, markdown, button, calendar and weather forecast cards, masonry and sections views, and badges are drawn natively. Other cards appear as placeholders listing their entities' state.
 
 ## 1. Get a token
 

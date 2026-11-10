@@ -1,0 +1,84 @@
+{
+ "weather.home": {
+  "type": "daily",
+  "forecast": [
+   {
+    "datetime": "2026-11-09T11:00:00+00:00",
+    "condition": "sunny",
+    "temperature": 16.2,
+    "templow": 8.1,
+    "precipitation": 0.0,
+    "precipitation_probability": 0,
+    "humidity": 70,
+    "wind_speed": 12.0,
+    "wind_bearing": 220
+   },
+   {
+    "datetime": "2026-11-10T11:00:00+00:00",
+    "condition": "partlycloudy",
+    "temperature": 15.0,
+    "templow": 9.4,
+    "precipitation": 0.0,
+    "precipitation_probability": 10,
+    "humidity": 70,
+    "wind_speed": 12.0,
+    "wind_bearing": 220
+   },
+   {
+    "datetime": "2026-11-11T11:00:00+00:00",
+    "condition": "rainy",
+    "temperature": 12.3,
+    "templow": 8.8,
+    "precipitation": 4.2,
+    "precipitation_probability": 80,
+    "humidity": 70,
+    "wind_speed": 12.0,
+    "wind_bearing": 220
+   },
+   {
+    "datetime": "2026-11-12T11:00:00+00:00",
+    "condition": "pouring",
+    "temperature": 11.0,
+    "templow": 7.2,
+    "precipitation": 4.2,
+    "precipitation_probability": 95,
+    "humidity": 70,
+    "wind_speed": 12.0,
+    "wind_bearing": 220
+   },
+   {
+    "datetime": "2026-11-13T11:00:00+00:00",
+    "condition": "cloudy",
+    "temperature": 12.8,
+    "templow": 6.5,
+    "precipitation": 0.0,
+    "precipitation_probability": 30,
+    "humidity": 70,
+    "wind_speed": 12.0,
+    "wind_bearing": 220
+   },
+   {
+    "datetime": "2026-11-14T11:00:00+00:00",
+    "condition": "partlycloudy",
+    "temperature": 14.1,
+    "templow": 6.0,
+    "precipitation": 0.0,
+    "precipitation_probability": 10,
+    "humidity": 70,
+    "wind_speed": 12.0,
+    "wind_bearing": 220
+   },
+   {
+    "datetime": "2026-11-15T11:00:00+00:00",
+    "condition": "sunny",
+    "temperature": 15.6,
+    "templow": 7.3,
+    "precipitation": 0.0,
+    "precipitation_probability": 0,
+    "humidity": 70,
+    "wind_speed": 12.0,
+    "wind_bearing": 220
+   }
+  ]
+ }
+}

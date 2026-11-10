@@ -13,6 +13,7 @@ pub mod normalise;
 pub mod state;
 pub mod timefmt;
 pub mod translations;
+pub mod weather;
 
 pub use actions::{Action, EntityAction, ServiceCall};
 pub use model::Dashboard;

@@ -274,7 +274,7 @@ pub fn builtin_icon(domain: &str, device_class: Option<&str>, state: &str) -> &'
             }
         }
         ("device_tracker", _) => "mdi:account",
-        ("weather", _) => "mdi:weather-partly-cloudy",
+        ("weather", _) => crate::weather::condition_icon(state),
         ("climate", _) => "mdi:thermostat",
         ("input_boolean", _) => {
             if state == "off" {

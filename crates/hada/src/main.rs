@@ -74,6 +74,9 @@ struct Cli {
     /// State translations for --screenshot (output of `frontend/get_translations`)
     #[arg(long)]
     translations: Option<PathBuf>,
+    /// Weather forecasts for --screenshot: JSON `{ "weather.x": {"type": "daily", "forecast": [...]} }`
+    #[arg(long)]
+    forecast: Option<PathBuf>,
     /// Screenshot size, e.g. 1024x600
     #[arg(long, default_value = "1024x600")]
     size: String,
@@ -189,17 +192,14 @@ fn main() -> anyhow::Result<()> {
     };
 
     if let Some(out) = cli.screenshot {
-        return screenshot(
-            out,
-            &cli.size,
-            source,
-            cli.states.as_deref(),
-            cli.icons.as_deref(),
-            cli.events.as_deref(),
-            cli.translations.as_deref(),
-            view,
-            &language,
-        );
+        let fixtures = Fixtures {
+            states: cli.states.as_deref(),
+            icons: cli.icons.as_deref(),
+            events: cli.events.as_deref(),
+            translations: cli.translations.as_deref(),
+            forecast: cli.forecast.as_deref(),
+        };
+        return screenshot(out, &cli.size, source, fixtures, view, &language);
     }
 
     let auth = match token {
@@ -245,19 +245,32 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Files standing in for Home Assistant in --screenshot mode.
+#[cfg_attr(not(feature = "screenshot"), allow(dead_code))]
+struct Fixtures<'a> {
+    states: Option<&'a Path>,
+    icons: Option<&'a Path>,
+    events: Option<&'a Path>,
+    translations: Option<&'a Path>,
+    forecast: Option<&'a Path>,
+}
+
 #[cfg(feature = "screenshot")]
-#[allow(clippy::too_many_arguments)]
 fn screenshot(
     out: PathBuf,
     size: &str,
     source: DashboardSource,
-    states: Option<&Path>,
-    icons: Option<&Path>,
-    events: Option<&Path>,
-    translations: Option<&Path>,
+    fixtures: Fixtures<'_>,
     view: Option<String>,
     language: &str,
 ) -> anyhow::Result<()> {
+    let Fixtures {
+        states,
+        icons,
+        events,
+        translations,
+        forecast,
+    } = fixtures;
     let (w, h) = size
         .split_once('x')
         .and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?)))
@@ -298,6 +311,23 @@ fn screenshot(
                 a.handle(HaEvent::Calendar { entity_id, events });
             }
         }
+        if let Some(p) = forecast {
+            let text = std::fs::read_to_string(p)?;
+            let all: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(&text)?;
+            for (entity_id, v) in all {
+                let forecast_type = v["type"]
+                    .as_str()
+                    .and_then(hada_core::weather::ForecastType::parse)
+                    .context("forecast fixture: \"type\" must be daily, hourly or twice_daily")?;
+                let items = hada_core::weather::parse_forecast(&v["forecast"]);
+                a.handle(HaEvent::Forecast {
+                    entity_id,
+                    forecast_type,
+                    items,
+                });
+            }
+        }
     }
     ui.set_status_text("Demo".into());
     headless::render_png(w, h, &out)?;
@@ -306,15 +336,11 @@ fn screenshot(
 }
 
 #[cfg(not(feature = "screenshot"))]
-#[allow(clippy::too_many_arguments)]
 fn screenshot(
     _: PathBuf,
     _: &str,
     _: DashboardSource,
-    _: Option<&Path>,
-    _: Option<&Path>,
-    _: Option<&Path>,
-    _: Option<&Path>,
+    _: Fixtures<'_>,
     _: Option<String>,
     _: &str,
 ) -> anyhow::Result<()> {

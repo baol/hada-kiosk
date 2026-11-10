@@ -45,6 +45,13 @@ pub struct App {
     translations_cache_path: Option<std::path::PathBuf>,
     locale: &'static Locale,
     calendar_events: std::collections::HashMap<String, Vec<hada_core::ha::ws::CalendarEvent>>,
+    forecasts: std::collections::HashMap<
+        String,
+        (
+            hada_core::weather::ForecastType,
+            Vec<hada_core::weather::ForecastItem>,
+        ),
+    >,
 }
 
 impl App {
@@ -91,6 +98,7 @@ impl App {
             translations_cache_path,
             locale: Locale::for_language(language),
             calendar_events: std::collections::HashMap::new(),
+            forecasts: std::collections::HashMap::new(),
         }));
         APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
@@ -190,6 +198,29 @@ impl App {
                     }
                 }
             }
+            HaEvent::Forecast {
+                entity_id,
+                forecast_type,
+                items,
+            } => {
+                let hourly = forecast_type == hada_core::weather::ForecastType::Hourly;
+                if let Some(refs) = self
+                    .built
+                    .as_ref()
+                    .and_then(|b| b.weather.get(entity_id.as_str()))
+                {
+                    for r in refs {
+                        r.rows.set_vec(build_ui::forecast_rows(
+                            &items,
+                            hourly,
+                            r.max_items,
+                            &self.icons,
+                            self.locale,
+                        ));
+                    }
+                }
+                self.forecasts.insert(entity_id, (forecast_type, items));
+            }
             HaEvent::Entities(ev) => {
                 let changed = self.store.apply(ev);
                 for id in changed {
@@ -260,6 +291,13 @@ impl App {
         // A rebuilt calendar card starts empty; refill it from the last fetch.
         for (entity_id, events) in self.calendar_events.clone() {
             self.handle(HaEvent::Calendar { entity_id, events });
+        }
+        for (entity_id, (forecast_type, items)) in self.forecasts.clone() {
+            self.handle(HaEvent::Forecast {
+                entity_id,
+                forecast_type,
+                items,
+            });
         }
         if let Some(ui) = self.ui() {
             if let Some(key) = self.initial_view.take() {
@@ -360,6 +398,20 @@ impl App {
                         slot.update(|leaf| leaf.header_toggle = i32::from(on));
                     }
                 }
+                RowRef::Weather {
+                    slot,
+                    entity,
+                    display,
+                } => slot.update(|leaf| {
+                    build_ui::fill_weather(
+                        leaf,
+                        entity,
+                        display,
+                        st,
+                        &self.icons,
+                        self.translations.as_ref(),
+                    )
+                }),
             }
         }
     }
@@ -383,7 +435,7 @@ impl App {
                         model.set_row_data(*index, f);
                     }
                 }
-                RowRef::Header { .. } => {}
+                RowRef::Header { .. } | RowRef::Weather { .. } => {}
             }
         }
         // Clear the pending marker if no state change arrives in time.

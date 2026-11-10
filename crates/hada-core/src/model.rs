@@ -6,6 +6,7 @@
 //! it displays.
 
 use crate::lovelace::{Segment, Severity};
+pub use crate::weather::{ForecastType, WeatherDisplay};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -150,8 +151,17 @@ pub enum CardKind {
         /// Days to list (7 for `listWeek`, 1 for `dayGridDay`, 31 for `dayGridMonth`).
         days: u32,
     },
-    /// A card type we do not render natively (map, weather-forecast,
-    /// media-control, …). Entities are still listed so the UI can show their state.
+    /// `weather-forecast` card: current conditions and a forecast row.
+    Weather {
+        entity: EntityRef,
+        show_current: bool,
+        show_forecast: bool,
+        /// Configured `forecast_type`; `None` = the first one the entity supports.
+        forecast_type: Option<ForecastType>,
+        display: WeatherDisplay,
+    },
+    /// A card type we do not render natively (map, media-control, …).
+    /// Entities are still listed so the UI can show their state.
     Unsupported {
         entities: Vec<EntityRef>,
     },
@@ -265,7 +275,8 @@ impl CardNode {
         match &self.kind {
             CardKind::Tile { entity, .. }
             | CardKind::Sensor { entity, .. }
-            | CardKind::Gauge { entity, .. } => {
+            | CardKind::Gauge { entity, .. }
+            | CardKind::Weather { entity, .. } => {
                 out.insert(entity.entity_id.clone());
             }
             CardKind::Entities { rows, .. } => {
@@ -321,7 +332,34 @@ impl CardNode {
             CardKind::Markdown { lines } => header + lines.len() as u32,
             CardKind::Button { .. } => 2,
             CardKind::Calendar { .. } => 8,
+            CardKind::Weather {
+                show_current,
+                show_forecast,
+                ..
+            } => 2 * u32::from(*show_current) + 2 * u32::from(*show_forecast),
             CardKind::Unsupported { .. } => 2,
+        }
+    }
+
+    fn collect_weather(
+        &self,
+        out: &mut std::collections::BTreeMap<Arc<str>, Option<ForecastType>>,
+    ) {
+        match &self.kind {
+            CardKind::Weather {
+                entity,
+                show_forecast: true,
+                forecast_type,
+                ..
+            } => {
+                // One subscription per entity: the first card that names a type wins.
+                let e = out.entry(entity.entity_id.clone()).or_insert(None);
+                if e.is_none() {
+                    *e = *forecast_type;
+                }
+            }
+            CardKind::Grid { cards, .. } => cards.iter().for_each(|c| c.collect_weather(out)),
+            _ => {}
         }
     }
 
@@ -350,6 +388,21 @@ impl Dashboard {
                     .iter()
                     .flat_map(|s| s.cards.iter())
                     .for_each(|c| c.collect_calendars(&mut out)),
+            }
+        }
+        out
+    }
+
+    /// Weather entities whose forecast is shown, with the configured forecast type.
+    pub fn weather_entities(&self) -> std::collections::BTreeMap<Arc<str>, Option<ForecastType>> {
+        let mut out = std::collections::BTreeMap::new();
+        for v in &self.views {
+            match &v.layout {
+                Layout::Masonry(cards) => cards.iter().for_each(|c| c.collect_weather(&mut out)),
+                Layout::Sections { sections, .. } => sections
+                    .iter()
+                    .flat_map(|s| s.cards.iter())
+                    .for_each(|c| c.collect_weather(&mut out)),
             }
         }
         out
