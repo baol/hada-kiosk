@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/banner.svg" alt="hada: native Home Assistant dashboards for wall panels and kiosks" width="100%"></p>
 
-**hada** shows your Home Assistant dashboard as a native app: no browser, no JavaScript, one binary that draws straight to the screen. It reads the dashboard you already have and is made for wall panels and kiosks, such as a Raspberry Pi with a touchscreen.
+**hada** shows your Home Assistant dashboard as a native app: no browser, no JavaScript, one binary that draws straight to the screen. It reads the dashboard you already have and is made for wall panels and kiosks, such as a Raspberry Pi with a touchscreen or an old Android tablet.
 
 **Is your browser kiosk slow or sluggish?** Try hada on the same hardware and tell us how it compares: [open an issue](https://github.com/baol/hada-kiosk/issues).
 
@@ -69,6 +69,14 @@ curl -fsSL https://github.com/baol/hada-kiosk/releases/latest/download/install-k
 
 This restores the boot target, display manager, seatd and groups recorded at install, and removes hada. Reboot to finish.
 
+## 2c. Android phone or tablet
+
+For Android 8.0 or newer. On the device, download [`hada.apk`](https://github.com/baol/hada-kiosk/releases/latest/download/hada.apk), open it and allow the install.
+
+On first start, enter the Home Assistant address, then a username and password (used once; only a sign-in token is kept), or no password for trusted networks, or a long-lived token. Rotation is set there too. Tap the status chip on the dashboard to change these later.
+
+For a wall panel, press Home and choose hada, *Always*: the device starts straight into the dashboard and the screen stays on. To undo, pick another Home app in Android settings > Apps > Default apps.
+
 ## Options
 
 Flags, environment variables, or keys in `~/.config/hada/config.toml` ([example](deploy/config.example.toml)).
@@ -96,7 +104,7 @@ sudo apt install libfontconfig-dev libinput-dev libudev-dev libxkbcommon-dev lib
 cargo run --release -- --url http://homeassistant.local:8123 --token-file ha-token
 ```
 
-`cargo test --workspace --features screenshot` runs the tests; `scripts/screenshots.sh` renders the demo dashboard without a display. Issues and pull requests are welcome.
+`cargo test --workspace --features screenshot` runs the tests; `scripts/screenshots.sh` renders the demo dashboard without a display; `scripts/build-apk.sh` builds the Android app (needs the Android SDK and a JDK 17+). Issues and pull requests are welcome.
 
 ## License
 

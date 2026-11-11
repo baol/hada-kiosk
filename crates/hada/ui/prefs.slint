@@ -1,0 +1,226 @@
+// Preferences of the Android app: Home Assistant address, sign-in and rotation.
+// Linux builds never show this page (they are configured by flags and config.toml).
+
+import { Theme } from "theme.slint";
+import { Icon, ToggleSwitch } from "widgets/widgets.slint";
+
+// A labelled single-line text field in the card style.
+component Field {
+    in property <string> label;
+    in property <string> hint;
+    in property <string> placeholder;
+    in property <bool> password;
+    in-out property <string> text;
+    callback accepted();
+    VerticalLayout {
+        spacing: 6px;
+        Text { text: root.label; color: Theme.text-dim; font-size: Theme.font-s; font-weight: 600; }
+        Rectangle {
+            height: 48px;
+            border-radius: 10px;
+            background: Theme.card-raised;
+            border-width: input.has-focus ? 2px : 1px;
+            border-color: input.has-focus ? Theme.primary : Theme.divider;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                input := TextInput {
+                    text <=> root.text;
+                    input-type: root.password ? InputType.password : InputType.text;
+                    color: Theme.text;
+                    font-size: Theme.font-m;
+                    vertical-alignment: center;
+                    single-line: true;
+                    accepted => { root.accepted(); }
+                }
+            }
+            if root.text == "" && !input.has-focus: Text {
+                x: 14px;
+                text: root.placeholder;
+                color: Theme.text-faint;
+                font-size: Theme.font-m;
+                vertical-alignment: center;
+            }
+        }
+        if root.hint != "": Text { text: root.hint; color: Theme.text-faint; font-size: 12px; wrap: word-wrap; }
+    }
+}
+
+component Choice {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+    height: 44px;
+    horizontal-stretch: 1;
+    preferred-width: 1px;
+    Rectangle {
+        border-radius: 10px;
+        background: root.selected ? Theme.primary : (ta.pressed ? Theme.pressed : Theme.card-raised);
+        Text {
+            text: root.label;
+            color: root.selected ? white : Theme.text;
+            font-size: Theme.font-s;
+            font-weight: root.selected ? 600 : 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+component Button {
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 48px;
+    horizontal-stretch: 1;
+    Rectangle {
+        border-radius: 10px;
+        background: root.primary ? (ta.pressed ? Theme.primary.darker(0.2) : Theme.primary) : (ta.pressed ? Theme.pressed : Theme.card-raised);
+        opacity: root.enabled ? 1 : 0.5;
+        Text {
+            text: root.label;
+            color: root.primary ? white : Theme.text;
+            font-size: Theme.font-m;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+export component PrefsPage inherits Rectangle {
+    in-out property <string> url;
+    in-out property <string> username;
+    in-out property <string> password;
+    in-out property <string> token;
+    // 0 auto, 1 portrait, 2 landscape, 3 portrait upside down, 4 landscape upside down
+    in-out property <int> rotation;
+    in property <string> error;
+    in property <bool> busy;
+    // Signed in before: offer Cancel (back to the dashboard) and Sign out.
+    in property <bool> signed-in;
+    in property <string> version;
+    property <bool> flipped: root.rotation == 3 || root.rotation == 4;
+    callback save();
+    callback cancel();
+    callback sign-out();
+
+    background: Theme.bg;
+    // Swallow touches meant for the dashboard underneath.
+    TouchArea { }
+
+    Flickable {
+        content-height: max(self.height, body.preferred-height);
+        body := VerticalLayout {
+            width: parent.width;
+            alignment: start;
+            padding: 20px;
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    width: min(520px, root.width - 40px);
+                    spacing: 18px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Icon { glyph: "\u{F07D0}"; size: 36px; color: Theme.accent; }  // home-assistant
+                        VerticalLayout {
+                            alignment: center;
+                            Text { text: "hada"; color: Theme.text; font-size: Theme.font-xl; font-weight: 700; }
+                            Text { text: "Connect to Home Assistant"; color: Theme.text-dim; font-size: Theme.font-m; }
+                        }
+                    }
+                    if root.error != "": Rectangle {
+                        border-radius: 10px;
+                        background: Theme.danger.with-alpha(0.15);
+                        HorizontalLayout {
+                            padding: 12px;
+                            spacing: 10px;
+                            Icon { glyph: "\u{F0028}"; size: 20px; color: Theme.danger; }  // alert-circle
+                            Text { text: root.error; color: Theme.text; font-size: Theme.font-s; wrap: word-wrap; vertical-alignment: center; }
+                        }
+                    }
+                    Field {
+                        label: "Home Assistant address";
+                        placeholder: "http://192.168.1.10:8123";
+                        hint: "A dashboard address such as …:8123/lovelace/kiosk also opens that view. If homeassistant.local does not work on this device, use the IP address.";
+                        text <=> root.url;
+                    }
+                    Field {
+                        label: "Username";
+                        placeholder: "kiosk";
+                        text <=> root.username;
+                    }
+                    Field {
+                        label: "Password";
+                        password: true;
+                        placeholder: "optional";
+                        hint: "Leave empty to sign in through trusted networks (the username then picks the user, if several are allowed). The password is used once and never stored.";
+                        text <=> root.password;
+                        accepted => { root.save(); }
+                    }
+                    Field {
+                        label: "Long-lived access token";
+                        placeholder: "optional, instead of username and password";
+                        text <=> root.token;
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Rotation"; color: Theme.text-dim; font-size: Theme.font-s; font-weight: 600; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Choice { label: "Auto"; selected: root.rotation == 0; clicked => { root.rotation = 0; } }
+                            Choice { label: "Portrait"; selected: root.rotation == 1 || root.rotation == 3; clicked => { root.rotation = root.flipped ? 3 : 1; } }
+                            Choice { label: "Landscape"; selected: root.rotation == 2 || root.rotation == 4; clicked => { root.rotation = root.flipped ? 4 : 2; } }
+                        }
+                        if root.rotation != 0: HorizontalLayout {
+                            Text {
+                                text: "Upside down";
+                                color: Theme.text;
+                                font-size: Theme.font-m;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            ToggleSwitch {
+                                checked: root.flipped;
+                                toggled => {
+                                    if (root.rotation == 1) { root.rotation = 3; }
+                                    else if (root.rotation == 3) { root.rotation = 1; }
+                                    else if (root.rotation == 2) { root.rotation = 4; }
+                                    else if (root.rotation == 4) { root.rotation = 2; }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        if root.signed-in: Button { label: "Cancel"; clicked => { root.cancel(); } }
+                        Button {
+                            label: root.busy ? "Connecting…" : "Save & connect";
+                            primary: true;
+                            enabled: !root.busy && root.url != "";
+                            clicked => { root.save(); }
+                        }
+                    }
+                    if root.signed-in: HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Sign out";
+                            color: Theme.danger;
+                            font-size: Theme.font-m;
+                            TouchArea { clicked => { root.sign-out(); } }
+                        }
+                    }
+                    Text {
+                        text: "hada " + root.version;
+                        color: Theme.text-faint;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
