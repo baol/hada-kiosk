@@ -53,6 +53,10 @@ front | grep -q "PrefsActivity" || fail "the preferences screen did not open on 
 shot preferences
 
 adb shell input keyevent KEYCODE_BACK
+sleep 5
+if front | grep -q "PrefsActivity"; then   # the first Back may only close a keyboard
+  adb shell input keyevent KEYCODE_BACK
+fi
 sleep 10
 echo "front: $(front)"
 front | grep -q "NativeActivity" || fail "Back did not return to the dashboard"

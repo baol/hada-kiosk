@@ -36,12 +36,12 @@
         </activity>
 
         <activity
-            android:name=".PrefsActivity"
+            android:name="io.github.baol.hada.PrefsActivity"
             android:label="hada"
             android:theme="@android:style/Theme.Material"
             android:exported="false" />
 
-        <receiver android:name=".BootReceiver" android:exported="true">
+        <receiver android:name="io.github.baol.hada.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
