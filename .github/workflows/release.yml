@@ -175,9 +175,59 @@ jobs:
           name: hada-${{ matrix.arch }}-linux-gnu
           path: dist/*
 
+  # The Android app, signed with the project's key (repository secrets). Without the
+  # secrets no APK is published: Android only installs an update signed with the same
+  # key as the installed app, so a throwaway key would break every update.
+  apk:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Signing key
+        id: key
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::warning::No ANDROID_KEYSTORE / ANDROID_KEYSTORE_PASSWORD secrets: the release has no APK."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.key.outputs.ok == 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.key.outputs.ok == 'true'
+        with:
+          shared-key: android
+      - name: Build (arm64 + armv7)
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export CARGO_APK_RELEASE_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          export CARGO_APK_RELEASE_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
+          scripts/build-apk.sh --release
+          mkdir -p dist
+          cp target/release/apk/hada.apk dist/hada.apk
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --print-certs dist/hada.apk | grep -v "^WARNING"
+          (cd dist && sha256sum hada.apk > hada.apk.sha256 && cat hada.apk.sha256)
+          rm -f "$RUNNER_TEMP/release.keystore"
+      - uses: actions/upload-artifact@v7
+        if: steps.key.outputs.ok == 'true'
+        with:
+          name: hada-android
+          path: dist/*
+
   release:
-    needs: [prepare, build]
-    if: needs.prepare.outputs.tag != ''
+    needs: [prepare, build, apk]
+    # A failed Android build does not hold back the Linux release.
+    if: always() && needs.prepare.outputs.tag != '' && needs.build.result == 'success'
     env:
       TAG: ${{ needs.prepare.outputs.tag }}
       SHA: ${{ needs.prepare.outputs.sha }}
@@ -222,9 +272,11 @@ jobs:
           - \`hada-arm64.deb\`, \`hada-amd64.deb\`: packages for Debian, Ubuntu and Raspberry Pi OS
           - \`hada-aarch64-linux-gnu\`, \`hada-x86_64-linux-gnu\`: plain binaries (+ \`.sha256\`)
           - \`install-kiosk.sh\`: kiosk installer pinned to this release
-
-          See the README for the one-line install, the options and how to undo kiosk mode.
           NOTES
+          if [ -f dist/hada.apk ]; then
+            echo '- `hada.apk`: Android app for Android 8.0 and newer (+ `.sha256`)' >> notes.md
+          fi
+          printf '\nSee the README for the one-line install, the options and how to undo kiosk mode.\n' >> notes.md
           if gh release view "$TAG" > /dev/null 2>&1; then
             # Existing release (created in the UI, or being rebuilt): replace the files,
             # and fill in the notes if the release has none.

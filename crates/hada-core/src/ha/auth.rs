@@ -1,7 +1,8 @@
 //! Access tokens for the websocket: either a long-lived token given by the
-//! user, or tokens obtained through Home Assistant's login flow with the
-//! `trusted_networks` auth provider (`POST /auth/login_flow`, `POST /auth/token`),
-//! kept alive with the refresh token like the frontend does.
+//! user, or tokens obtained through Home Assistant's login flow
+//! (`POST /auth/login_flow`, `POST /auth/token`) with the `trusted_networks` or the
+//! username/password (`homeassistant`) auth provider, kept alive with the refresh
+//! token like the frontend does. Only the refresh token is stored, never a password.
 
 use crate::ha::http::{self, form_encode, HttpError};
 use crate::timefmt::now_unix;
@@ -19,6 +20,9 @@ pub enum Auth {
     /// Log in through the trusted-networks provider; `user` selects the Home
     /// Assistant user (name or id) when the provider offers several.
     TrustedNetwork { user: Option<String> },
+    /// Log in with a Home Assistant username and password (kept in memory only, for
+    /// when the stored refresh token is no longer accepted).
+    Password { username: String, password: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -125,8 +129,12 @@ impl AuthState {
     }
 
     async fn login_flow(&self, base_url: &str) -> Result<String, AuthError> {
-        let Auth::TrustedNetwork { user } = &self.auth else {
-            unreachable!("token auth has no login flow")
+        let user = match &self.auth {
+            Auth::TrustedNetwork { user } => user,
+            Auth::Password { username, password } => {
+                return self.password_flow(base_url, username, password).await
+            }
+            Auth::Token(_) => unreachable!("token auth has no login flow"),
         };
         let body = json!({
             "client_id": self.client_id,
@@ -213,6 +221,67 @@ impl AuthState {
             Some("form") => Err(AuthError::Flow(format!(
                 "unexpected form: {}",
                 result["errors"]
+            ))),
+            _ => Err(AuthError::Flow(format!("unexpected response: {result}"))),
+        }
+    }
+
+    /// Username/password provider: start the flow, answer its one form step.
+    async fn password_flow(
+        &self,
+        base_url: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<String, AuthError> {
+        let body = json!({
+            "client_id": self.client_id,
+            "handler": ["homeassistant", null],
+            "redirect_uri": self.client_id,
+        });
+        let resp = http::post(
+            base_url,
+            "/auth/login_flow",
+            "application/json",
+            &body.to_string(),
+        )
+        .await?;
+        let start = resp
+            .json()
+            .filter(|_| resp.status < 400)
+            .ok_or_else(|| AuthError::Flow(format!("HTTP {}: {}", resp.status, resp.body)))?;
+        let flow_id = start["flow_id"]
+            .as_str()
+            .ok_or_else(|| AuthError::Flow(format!("unexpected response: {start}")))?;
+        let body =
+            json!({ "client_id": self.client_id, "username": username, "password": password });
+        let resp = http::post(
+            base_url,
+            &format!("/auth/login_flow/{flow_id}"),
+            "application/json",
+            &body.to_string(),
+        )
+        .await?;
+        let result = resp
+            .json()
+            .ok_or_else(|| AuthError::Flow(format!("HTTP {}: {}", resp.status, resp.body)))?;
+        match (result["type"].as_str(), result["step_id"].as_str()) {
+            (Some("create_entry"), _) => result["result"]
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| AuthError::Flow("missing authorization code".into())),
+            (Some("form"), Some("init")) => Err(AuthError::Flow(
+                if result["errors"]["base"] == "invalid_auth" {
+                    "wrong username or password".into()
+                } else {
+                    format!("login refused: {}", result["errors"])
+                },
+            )),
+            (Some("form"), Some(_)) => Err(AuthError::Flow(
+                "two-factor authentication is not supported; use a long-lived token".into(),
+            )),
+            (Some("abort"), _) => Err(AuthError::Flow(format!(
+                "aborted: {}",
+                result["reason"].as_str().unwrap_or("unknown reason")
             ))),
             _ => Err(AuthError::Flow(format!("unexpected response: {result}"))),
         }

@@ -22,4 +22,6 @@ F=(--dashboard tests/fixtures/dashboard.yaml --states tests/fixtures/states.json
 # The same portrait view in Italian, showing Home Assistant's own translations.
 "$BIN" "${F[@]}" --lang it --view kiosk   --size 600x1024 \
   --translations tests/fixtures/translations_it.json --screenshot "$OUT/portrait-kiosk-it.png"
+# The Android app's preferences page, on a phone-sized screen.
+"$BIN" "${F[@]}" --size 400x800 --prefs-page "" --screenshot "$OUT/android-prefs.png"
 ls -l "$OUT"

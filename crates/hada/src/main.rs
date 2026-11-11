@@ -1,25 +1,20 @@
-//! hada — native fullscreen Home Assistant dashboard.
+//! hada — native fullscreen Home Assistant dashboard (Linux desktop and kiosk).
 
-mod app;
-mod build_ui;
 #[cfg(feature = "screenshot")]
-mod headless;
-mod mdi;
-
-slint::include_modules!();
+use hada::{app, headless};
+use hada::{AppWindow, VERSION};
 
 use anyhow::{bail, Context};
 use clap::Parser;
-use hada_core::ha::{self, Auth, DashboardSource, HaCommand, HaConfig, HaEvent};
+#[cfg(feature = "screenshot")]
+use hada_core::ha::HaEvent;
+use hada_core::ha::{self, Auth, DashboardSource, HaConfig};
 use hada_core::lovelace::LovelaceConfig;
 use hada_core::model::Dashboard;
 use hada_core::normalise;
 use serde::Deserialize;
 use slint::ComponentHandle;
 use std::path::{Path, PathBuf};
-
-/// Crate version plus the git commit the binary was built from.
-const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("HADA_GIT_HASH"), ")");
 
 #[derive(Parser, Debug)]
 #[command(
@@ -80,6 +75,9 @@ struct Cli {
     /// Screenshot size, e.g. 1024x600
     #[arg(long, default_value = "1024x600")]
     size: String,
+    /// --screenshot of the Android preferences page instead (with this error text, may be empty)
+    #[arg(long, hide = true)]
+    prefs_page: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -198,6 +196,7 @@ fn main() -> anyhow::Result<()> {
             events: cli.events.as_deref(),
             translations: cli.translations.as_deref(),
             forecast: cli.forecast.as_deref(),
+            prefs_page: cli.prefs_page.as_deref(),
         };
         return screenshot(out, &cli.size, source, fixtures, view, &language);
     }
@@ -211,37 +210,17 @@ fn main() -> anyhow::Result<()> {
     };
 
     let ui = AppWindow::new()?;
-    let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HaCommand>();
     let cache = cache_dir();
-    let app = app::App::install(&ui, Some(cmd_tx.clone()), view, cache.clone(), &language);
-    // A local dashboard is shown right away, even before Home Assistant answers.
-    if let DashboardSource::Local(d) = &source {
-        app.borrow_mut().set_dashboard(d.clone());
-    }
-
-    // Network thread: tokio runtime driving the websocket session; events hop to the UI thread.
     let cfg = HaConfig {
         base_url: url,
         auth,
-        auth_store: cache.map(|d| d.join("auth.json")),
+        auth_store: cache.as_ref().map(|d| d.join("auth.json")),
         language,
         source,
     };
-    std::thread::Builder::new()
-        .name("ha-ws".into())
-        .spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("tokio runtime");
-            rt.block_on(ha::run(cfg, cmd_rx, |ev: HaEvent| {
-                let _ = slint::invoke_from_event_loop(move || app::with_app(|app| app.handle(ev)));
-            }));
-        })
-        .context("spawning network thread")?;
-
+    let session = hada::start_session(&ui, cfg, view, cache)?;
     ui.run()?;
-    let _ = cmd_tx.send(HaCommand::Shutdown);
+    session.stop();
     Ok(())
 }
 
@@ -253,6 +232,7 @@ struct Fixtures<'a> {
     events: Option<&'a Path>,
     translations: Option<&'a Path>,
     forecast: Option<&'a Path>,
+    prefs_page: Option<&'a str>,
 }
 
 #[cfg(feature = "screenshot")]
@@ -270,6 +250,7 @@ fn screenshot(
         events,
         translations,
         forecast,
+        prefs_page,
     } = fixtures;
     let (w, h) = size
         .split_once('x')
@@ -330,6 +311,16 @@ fn screenshot(
         }
     }
     ui.set_status_text("Demo".into());
+    if let Some(error) = prefs_page {
+        ui.set_version(VERSION.into());
+        ui.set_prefs_url("http://192.168.1.10:8123/lovelace/kiosk".into());
+        ui.set_prefs_username("kiosk".into());
+        ui.set_prefs_password("secret".into());
+        ui.set_prefs_rotation(2);
+        ui.set_prefs_error(error.into());
+        ui.set_prefs_signed_in(!error.is_empty());
+        ui.set_show_prefs(true);
+    }
     headless::render_png(w, h, &out)?;
     tracing::info!("wrote {}", out.display());
     Ok(())

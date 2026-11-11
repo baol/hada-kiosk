@@ -1,4 +1,4 @@
-//! The trusted-networks login flow against a minimal fake of Home Assistant's
+//! The trusted-networks and username/password login flows against a minimal fake of Home Assistant's
 //! `/auth/login_flow` and `/auth/token` endpoints (raw HTTP/1.1 over TCP).
 
 use hada_core::ha::auth::{Auth, AuthState};
@@ -46,6 +46,29 @@ async fn fake_ha(listener: TcpListener, log: Arc<Mutex<Log>>, users: usize) {
             .requests
             .push((path.clone(), body.to_string()));
         let (status, reply) = match path.as_str() {
+            "/auth/login_flow" if body.contains("\"homeassistant\"") => {
+                let v: Value = serde_json::from_str(body).unwrap();
+                assert_eq!(v["handler"], json!(["homeassistant", null]));
+                (
+                    200,
+                    json!({"type": "form", "flow_id": "fp", "step_id": "init", "errors": {},
+                        "data_schema": [{"name": "username", "type": "string"}, {"name": "password", "type": "string"}]}),
+                )
+            }
+            "/auth/login_flow/fp" => {
+                let v: Value = serde_json::from_str(body).unwrap();
+                if v["username"] == "kiosk" && v["password"] == "s3cret" {
+                    (
+                        200,
+                        json!({"type": "create_entry", "flow_id": "fp", "result": "CODE-PW", "version": 1}),
+                    )
+                } else {
+                    (
+                        200,
+                        json!({"type": "form", "flow_id": "fp", "step_id": "init", "errors": {"base": "invalid_auth"}}),
+                    )
+                }
+            }
             "/auth/login_flow" => {
                 let v: Value = serde_json::from_str(body).unwrap();
                 assert_eq!(v["handler"], json!(["trusted_networks", null]));
@@ -193,4 +216,42 @@ async fn long_lived_token_needs_no_network() {
         auth.access_token("http://127.0.0.1:9").await.unwrap(),
         "LLAT"
     );
+}
+
+#[tokio::test]
+async fn username_and_password() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let log = Arc::new(Mutex::new(Log::default()));
+    tokio::spawn(fake_ha(listener, log.clone(), 1));
+    let dir = std::env::temp_dir().join(format!("hada-pw-test-{}", std::process::id()));
+    let store = dir.join("auth.json");
+    let _ = std::fs::remove_file(&store);
+
+    let mut wrong = AuthState::new(
+        Auth::Password {
+            username: "kiosk".into(),
+            password: "nope".into(),
+        },
+        &base,
+        Some(store.clone()),
+    );
+    let err = wrong.access_token(&base).await.unwrap_err().to_string();
+    assert!(err.contains("wrong username or password"), "{err}");
+    assert!(!store.exists());
+
+    let mut auth = AuthState::new(
+        Auth::Password {
+            username: "kiosk".into(),
+            password: "s3cret".into(),
+        },
+        &base,
+        Some(store.clone()),
+    );
+    assert!(!auth.is_trusted_network());
+    assert_eq!(auth.access_token(&base).await.unwrap(), "ACCESS-CODE-PW");
+    let saved = std::fs::read_to_string(&store).unwrap();
+    assert!(saved.contains("REFRESH-1"));
+    assert!(!saved.contains("s3cret"), "the password is never stored");
+    let _ = std::fs::remove_dir_all(&dir);
 }

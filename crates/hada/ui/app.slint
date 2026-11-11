@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { Icon } from "widgets/widgets.slint";
 import { CardView, Actions } from "cards/cards.slint";
+import { PrefsPage } from "prefs.slint";
 import { RowData, FeatureData, LeafCard, CardData, CardRow, ColumnData, SectionRow, ViewData, ControlKind, SliderKind, ActionKind } from "types.slint";
 
 export { RowData, FeatureData, LeafCard, CardData, CardRow, ColumnData, SectionRow, ViewData, ControlKind, SliderKind, ActionKind } from "types.slint";
@@ -58,6 +59,7 @@ component RailItem {
 component StatusChip {
     in property <string> text;
     in property <bool> ok;
+    callback clicked();
     height: 28px;
     Rectangle {
         border-radius: 14px;
@@ -73,6 +75,7 @@ component StatusChip {
             Text { text: root.text; color: Theme.text-dim; font-size: 12px; vertical-alignment: center; overflow: elide; }
         }
     }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
 // A card inside a section row: width is `span` of 12 grid units, height fixed
@@ -155,6 +158,22 @@ export component AppWindow inherits Window {
     // columns and regroup sections.
     callback relayout(width: length);
 
+    // Preferences page (Android only; Linux never sets show-prefs).
+    in-out property <bool> show-prefs: false;
+    in-out property <string> prefs-url;
+    in-out property <string> prefs-username;
+    in-out property <string> prefs-password;
+    in-out property <string> prefs-token;
+    in-out property <int> prefs-rotation;
+    in property <string> prefs-error;
+    in property <bool> prefs-busy;
+    in property <bool> prefs-signed-in;
+    in property <string> version;
+    callback status-clicked();
+    callback prefs-save();
+    callback prefs-cancel();
+    callback prefs-sign-out();
+
     property <bool> portrait: root.width < root.height;
     property <ViewData> view: root.views[root.current-view];
     // Width available to the content. Derived from the window size (not from
@@ -178,7 +197,7 @@ export component AppWindow inherits Window {
                     clicked => { root.current-view = i; }
                 }
                 Rectangle { vertical-stretch: 1; }
-                if root.show-status: StatusChip { text: root.status-text; ok: root.connected; }
+                if root.show-status: StatusChip { text: root.status-text; ok: root.connected; clicked => { root.status-clicked(); } }
             }
         }
         Content {
@@ -200,12 +219,31 @@ export component AppWindow inherits Window {
                     clicked => { root.current-view = i; }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                if root.show-status: VerticalLayout { alignment: center; StatusChip { text: root.status-text; ok: root.connected; } }
+                if root.show-status: VerticalLayout { alignment: center; StatusChip { text: root.status-text; ok: root.connected; clicked => { root.status-clicked(); } } }
             }
         }
         Content {
             view: root.view;
             avail-width: root.avail;
         }
+    }
+
+    if root.show-prefs: PrefsPage {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        url <=> root.prefs-url;
+        username <=> root.prefs-username;
+        password <=> root.prefs-password;
+        token <=> root.prefs-token;
+        rotation <=> root.prefs-rotation;
+        error: root.prefs-error;
+        busy: root.prefs-busy;
+        signed-in: root.prefs-signed-in;
+        version: root.version;
+        save => { root.prefs-save(); }
+        cancel => { root.prefs-cancel(); }
+        sign-out => { root.prefs-sign-out(); }
     }
 }
