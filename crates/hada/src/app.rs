@@ -52,6 +52,13 @@ pub struct App {
             Vec<hada_core::weather::ForecastItem>,
         ),
     >,
+    /// Home Assistant address, for relative artwork URLs.
+    base_url: Option<String>,
+    /// Decoded album art per media player, and the URL it was asked for.
+    artworks: std::collections::HashMap<Arc<str>, slint::Image>,
+    artwork_urls: std::collections::HashMap<Arc<str>, String>,
+    /// Moves the media progress bars on while something plays.
+    media_timer: slint::Timer,
 }
 
 impl App {
@@ -62,6 +69,7 @@ impl App {
         initial_view: Option<String>,
         cache_dir: Option<std::path::PathBuf>,
         language: &str,
+        base_url: Option<String>,
     ) -> Rc<RefCell<App>> {
         let icon_cache_path = cache_dir.as_ref().map(|d| d.join("icons.json"));
         let translations_cache_path = cache_dir
@@ -99,6 +107,10 @@ impl App {
             locale: Locale::for_language(language),
             calendar_events: std::collections::HashMap::new(),
             forecasts: std::collections::HashMap::new(),
+            base_url,
+            artworks: std::collections::HashMap::new(),
+            artwork_urls: std::collections::HashMap::new(),
+            media_timer: slint::Timer::default(),
         }));
         APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
@@ -198,6 +210,18 @@ impl App {
                     }
                 }
             }
+            HaEvent::Artwork {
+                entity_id,
+                url,
+                image,
+            } => {
+                let id: Arc<str> = entity_id.as_str().into();
+                if self.artwork_urls.get(&id) == Some(&url) {
+                    if let Some(a) = image {
+                        self.set_artwork(&id, &a);
+                    }
+                }
+            }
             HaEvent::Forecast {
                 entity_id,
                 forecast_type,
@@ -282,6 +306,7 @@ impl App {
                 icons: &self.icons,
                 translations: self.translations.as_ref(),
                 locale: self.locale,
+                artworks: &self.artworks,
             },
             self.content_width,
         );
@@ -298,6 +323,15 @@ impl App {
                 forecast_type,
                 items,
             });
+        }
+        let has_media = self.built.as_ref().is_some_and(|b| !b.media.is_empty());
+        if has_media && !self.media_timer.running() {
+            self.media_timer
+                .start(slint::TimerMode::Repeated, Duration::from_secs(1), || {
+                    with_app(|app| app.tick_media())
+                });
+        } else if !has_media {
+            self.media_timer.stop();
         }
         if let Some(ui) = self.ui() {
             if let Some(key) = self.initial_view.take() {
@@ -356,7 +390,61 @@ impl App {
         }
     }
 
+    /// Show this artwork for a player (also used by the screenshot mode).
+    pub fn set_artwork(&mut self, id: &Arc<str>, a: &hada_core::artwork::Artwork) {
+        let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+            &a.rgba, a.width, a.height,
+        );
+        self.artworks
+            .insert(id.clone(), slint::Image::from_rgba8(buf));
+        self.refresh_entity(id);
+    }
+
+    /// Ask for the artwork when a player's picture URL changed.
+    fn update_artwork(&mut self, id: &Arc<str>) {
+        let base = self.base_url.clone().unwrap_or_default();
+        let url = self
+            .store
+            .get(id)
+            .and_then(|st| hada_core::media::artwork_url(&base, st));
+        match url {
+            Some(url) if self.artwork_urls.get(id) != Some(&url) => {
+                self.artwork_urls.insert(id.clone(), url.clone());
+                if let Some(tx) = &self.cmd_tx {
+                    tracing::info!("fetching artwork for {id}");
+                    let _ = tx.send(HaCommand::FetchArtwork {
+                        entity_id: id.to_string(),
+                        url,
+                    });
+                }
+            }
+            Some(_) => {}
+            None => {
+                self.artwork_urls.remove(id);
+                self.artworks.remove(id);
+            }
+        }
+    }
+
+    /// Advance the progress bars of the players that are playing.
+    fn tick_media(&mut self) {
+        let playing: Vec<Arc<str>> = self
+            .built
+            .as_ref()
+            .map(|b| b.media.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|id| self.store.get(id).is_some_and(|s| s.state == "playing"))
+            .collect();
+        for id in playing {
+            self.refresh_entity(&id);
+        }
+    }
+
     fn refresh_entity(&mut self, id: &Arc<str>) {
+        if self.built.as_ref().is_some_and(|b| b.media.contains(id)) {
+            self.update_artwork(id);
+        }
         let Some(built) = &self.built else { return };
         let Some(refs) = built.index.get(id) else {
             return;
@@ -412,6 +500,17 @@ impl App {
                         self.translations.as_ref(),
                     )
                 }),
+                RowRef::Media { slot, entity } => slot.update(|leaf| {
+                    build_ui::fill_media(
+                        leaf,
+                        entity,
+                        st,
+                        &self.icons,
+                        self.translations.as_ref(),
+                        self.artworks.get(id),
+                        hada_core::timefmt::now_unix(),
+                    )
+                }),
             }
         }
     }
@@ -435,7 +534,7 @@ impl App {
                         model.set_row_data(*index, f);
                     }
                 }
-                RowRef::Header { .. } | RowRef::Weather { .. } => {}
+                RowRef::Header { .. } | RowRef::Weather { .. } | RowRef::Media { .. } => {}
             }
         }
         // Clear the pending marker if no state change arrives in time.
@@ -482,6 +581,11 @@ impl App {
             ActionKind::Press => Some(Action::Press),
             ActionKind::Run => Some(Action::Run),
             ActionKind::Install => Some(Action::Install),
+            ActionKind::MediaPlayPause => Some(Action::MediaPlayPause),
+            ActionKind::MediaPrevious => Some(Action::MediaPrevious),
+            ActionKind::MediaNext => Some(Action::MediaNext),
+            ActionKind::SetVolume => Some(Action::VolumeSet(value as f64 / 100.0)),
+            ActionKind::Mute => Some(Action::VolumeMute(value >= 0.5)),
             ActionKind::HeaderToggle => {
                 let Some(ctx) = self
                     .built

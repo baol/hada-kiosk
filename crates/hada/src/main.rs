@@ -75,6 +75,9 @@ struct Cli {
     /// Screenshot size, e.g. 1024x600
     #[arg(long, default_value = "1024x600")]
     size: String,
+    /// --screenshot: album art for a media player, as `media_player.x=cover.png` (repeatable)
+    #[arg(long, hide = true)]
+    artwork: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -193,6 +196,7 @@ fn main() -> anyhow::Result<()> {
             events: cli.events.as_deref(),
             translations: cli.translations.as_deref(),
             forecast: cli.forecast.as_deref(),
+            artwork: &cli.artwork,
         };
         return screenshot(out, &cli.size, source, fixtures, view, &language);
     }
@@ -228,6 +232,7 @@ struct Fixtures<'a> {
     events: Option<&'a Path>,
     translations: Option<&'a Path>,
     forecast: Option<&'a Path>,
+    artwork: &'a [String],
 }
 
 #[cfg(feature = "screenshot")]
@@ -245,6 +250,7 @@ fn screenshot(
         events,
         translations,
         forecast,
+        artwork,
     } = fixtures;
     let (w, h) = size
         .split_once('x')
@@ -255,7 +261,7 @@ fn screenshot(
     };
     headless::install(w, h).map_err(|e| anyhow::anyhow!("{e:?}"))?;
     let ui = AppWindow::new()?;
-    let app = app::App::install(&ui, None, view, None, language);
+    let app = app::App::install(&ui, None, view, None, language, None);
     {
         let mut a = app.borrow_mut();
         if let Some(p) = translations {
@@ -285,6 +291,14 @@ fn screenshot(
             for (entity_id, events) in all {
                 a.handle(HaEvent::Calendar { entity_id, events });
             }
+        }
+        for spec in artwork {
+            let (entity, path) = spec
+                .split_once('=')
+                .context("--artwork must look like media_player.x=cover.png")?;
+            let bytes = std::fs::read(path).with_context(|| format!("reading {path}"))?;
+            let art = hada_core::artwork::decode(&bytes).map_err(|e| anyhow::anyhow!("{e}"))?;
+            a.set_artwork(&entity.into(), &art);
         }
         if let Some(p) = forecast {
             let text = std::fs::read_to_string(p)?;

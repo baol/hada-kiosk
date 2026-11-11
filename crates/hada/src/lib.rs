@@ -60,7 +60,14 @@ pub fn start_session(
 ) -> anyhow::Result<Session> {
     let generation = SESSION.fetch_add(1, Ordering::SeqCst) + 1;
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HaCommand>();
-    let app = app::App::install(ui, Some(cmd_tx.clone()), view, cache, &cfg.language);
+    let app = app::App::install(
+        ui,
+        Some(cmd_tx.clone()),
+        view,
+        cache,
+        &cfg.language,
+        Some(cfg.base_url.clone()),
+    );
     // A local dashboard is shown right away, even before Home Assistant answers.
     if let DashboardSource::Local(d) = &cfg.source {
         app.borrow_mut().set_dashboard(d.clone());

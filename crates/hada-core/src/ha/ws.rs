@@ -7,6 +7,7 @@
 //! On any failure it reconnects with exponential backoff.
 
 use crate::actions::ServiceCall;
+use crate::artwork::{self, Artwork};
 use crate::ha::auth::{Auth, AuthState};
 use crate::ha::messages::{auth_message, command, Incoming, WsError};
 use crate::icons::IconResources;
@@ -84,6 +85,12 @@ pub enum HaEvent {
         call: ServiceCall,
         error: String,
     },
+    /// Album art asked for with [`HaCommand::FetchArtwork`]; `None` if it failed.
+    Artwork {
+        entity_id: String,
+        url: String,
+        image: Option<Artwork>,
+    },
     Disconnected {
         reason: String,
         retry_in: Duration,
@@ -109,6 +116,11 @@ pub struct CalendarEvent {
 #[derive(Debug, Clone)]
 pub enum HaCommand {
     CallService(ServiceCall),
+    /// Download and decode a media player's artwork (answered with `HaEvent::Artwork`).
+    FetchArtwork {
+        entity_id: String,
+        url: String,
+    },
     /// Drop the connection and start over (re-fetches the dashboard).
     Reload,
     Shutdown,
@@ -311,6 +323,7 @@ where
                         call,
                         error: "not connected".into(),
                     }),
+                    Some(HaCommand::FetchArtwork { .. }) => {}
                 },
             }
         }
@@ -460,6 +473,8 @@ where
     let mut pending_calendars: HashMap<u64, String> = HashMap::new();
     let mut calendar_tick = interval(CALENDAR_REFRESH);
     calendar_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // Artwork downloads run beside the websocket and report back here.
+    let (art_tx, mut art_rx) = mpsc::unbounded_channel::<HaEvent>();
     // Forecast subscriptions: awaiting their result (with the types left to try), and active.
     let mut forecast_pending: HashMap<u64, (String, ForecastType, Vec<ForecastType>)> =
         HashMap::new();
@@ -527,7 +542,21 @@ where
                     let id = conn.send("call_service", fields).await?;
                     pending_calls.insert(id, call);
                 }
+                Some(HaCommand::FetchArtwork { entity_id, url }) => {
+                    let tx = art_tx.clone();
+                    tokio::spawn(async move {
+                        let image = match artwork::fetch(&url).await {
+                            Ok(a) => Some(a),
+                            Err(e) => {
+                                tracing::warn!("artwork for {entity_id}: {e}");
+                                None
+                            }
+                        };
+                        let _ = tx.send(HaEvent::Artwork { entity_id, url, image });
+                    });
+                }
             },
+            Some(ev) = art_rx.recv() => emit(ev),
             _ = ping.tick() => {
                 if awaiting_pong.is_some() {
                     return Err(SessionError::Protocol("ping timeout".into()));

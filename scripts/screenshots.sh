@@ -13,9 +13,12 @@ export HADA_NOW=1794211200   # 2026-11-09 08:00 UTC, matches tests/fixtures/even
 export TZ=UTC                # forecast labels use the local time zone
 F=(--dashboard tests/fixtures/dashboard.yaml --states tests/fixtures/states.json
    --icons tests/fixtures/icons.json --events tests/fixtures/events.json
-   --forecast tests/fixtures/forecast.json)
+   --forecast tests/fixtures/forecast.json
+   --artwork media_player.av_receiver=tests/fixtures/artwork.png)
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view home    --size 1024x600 --screenshot "$OUT/landscape-home.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view devices --size 1024x600 --screenshot "$OUT/landscape-devices.png"
+# The whole Devices view, down to the media card with its album art.
+"$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view devices --size 1024x1100 --screenshot "$OUT/devices-full.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view kiosk   --size 1024x600 --screenshot "$OUT/landscape-kiosk.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view kiosk   --size 600x1024 --screenshot "$OUT/portrait-kiosk.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view home    --size 600x1024 --screenshot "$OUT/portrait-home.png"

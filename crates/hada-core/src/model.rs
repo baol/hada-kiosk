@@ -160,7 +160,11 @@ pub enum CardKind {
         forecast_type: Option<ForecastType>,
         display: WeatherDisplay,
     },
-    /// A card type we do not render natively (map, media-control, …).
+    /// `media-control` card: artwork, track, transport controls and volume.
+    Media {
+        entity: EntityRef,
+    },
+    /// A card type we do not render natively (map, …).
     /// Entities are still listed so the UI can show their state.
     Unsupported {
         entities: Vec<EntityRef>,
@@ -276,7 +280,8 @@ impl CardNode {
             CardKind::Tile { entity, .. }
             | CardKind::Sensor { entity, .. }
             | CardKind::Gauge { entity, .. }
-            | CardKind::Weather { entity, .. } => {
+            | CardKind::Weather { entity, .. }
+            | CardKind::Media { entity } => {
                 out.insert(entity.entity_id.clone());
             }
             CardKind::Entities { rows, .. } => {
@@ -337,6 +342,7 @@ impl CardNode {
                 show_forecast,
                 ..
             } => 2 * u32::from(*show_current) + 2 * u32::from(*show_forecast),
+            CardKind::Media { .. } => 4,
             CardKind::Unsupported { .. } => 2,
         }
     }

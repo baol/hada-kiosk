@@ -10,7 +10,8 @@ export enum SliderKind { brightness-pct, fan-percentage, cover-position, cover-t
 export enum ActionKind {
     toggle, turn-on, turn-off,
     set-brightness, set-fan, set-cover-position, set-cover-tilt, set-number, set-temperature,
-    open, close, stop, press, run, install, header-toggle, row-action
+    open, close, stop, press, run, install, header-toggle, row-action,
+    media-play-pause, media-previous, media-next, set-volume, mute
 }
 
 // Row kinds for entities-like lists.
@@ -55,7 +56,7 @@ export struct FeatureData {
 }
 
 // kind: 0 tile, 1 entities, 2 glance, 3 sensor, 4 gauge, 6 markdown, 7 button, 8 placeholder,
-// 9 calendar, 10 weather
+// 9 calendar, 10 weather, 11 media (rows[0].entity-id = the player)
 export struct LeafCard {
     kind: int,
     raw-type: string,
@@ -63,7 +64,22 @@ export struct LeafCard {
     subtitle: string,       // e.g. calendar date range, weather condition
     glyph: string,          // weather: condition icon
     value-text: string,     // weather: current temperature
-    detail: string,         // weather: line under the temperature
+    detail: string,         // weather: line under the temperature; media: artist · album
+    // media
+    artwork: image,
+    has-artwork: bool,
+    playing: bool,
+    powered: bool,          // on (not off / unavailable)
+    can-play: bool,
+    can-previous: bool,
+    can-next: bool,
+    can-power: bool,
+    can-volume: bool,
+    can-mute: bool,
+    muted: bool,
+    volume: float,          // 0-100
+    progress: float,        // 0..1, negative = no progress bar
+    progress-text: string,  // "1:02 / 3:45"
     card-id: int,
     header-toggle: int,     // -1 none, 0 off, 1 on
     tap-toggles: bool,

@@ -89,6 +89,8 @@ pub enum RowRef {
         entity: EntityRef,
         display: WeatherDisplay,
     },
+    /// A media card.
+    Media { slot: CardSlot, entity: EntityRef },
 }
 
 pub struct CardCtx {
@@ -121,6 +123,8 @@ pub struct Built {
     pub calendars: HashMap<Arc<str>, Vec<CalendarRef>>,
     /// Weather entity → forecast rows of the weather cards showing it.
     pub weather: HashMap<Arc<str>, Vec<WeatherRef>>,
+    /// Media players shown in media cards (their progress bars tick while playing).
+    pub media: Vec<Arc<str>>,
 }
 
 #[derive(Clone)]
@@ -145,6 +149,8 @@ pub struct Ctx<'a> {
     pub icons: &'a IconResolver,
     pub translations: Option<&'a Translations>,
     pub locale: &'static Locale,
+    /// Downloaded album art per media player.
+    pub artworks: &'a HashMap<Arc<str>, slint::Image>,
 }
 
 struct Builder<'a> {
@@ -153,6 +159,7 @@ struct Builder<'a> {
     index: HashMap<Arc<str>, Vec<RowRef>>,
     calendars: HashMap<Arc<str>, Vec<CalendarRef>>,
     weather: HashMap<Arc<str>, Vec<WeatherRef>>,
+    media: Vec<Arc<str>>,
     /// Estimated width of the card being built (logical px).
     width_hint: f32,
 }
@@ -164,6 +171,7 @@ pub fn build(dash: &Dashboard, ctx: Ctx<'_>, content_width: f32) -> Built {
         index: HashMap::new(),
         calendars: HashMap::new(),
         weather: HashMap::new(),
+        media: Vec::new(),
         width_hint: content_width,
     };
     let mut views = Vec::with_capacity(dash.views.len());
@@ -176,6 +184,64 @@ pub fn build(dash: &Dashboard, ctx: Ctx<'_>, content_width: f32) -> Built {
         index: b.index,
         calendars: b.calendars,
         weather: b.weather,
+        media: b.media,
+    }
+}
+
+/// Everything a media card shows, from the player's state.
+pub fn fill_media(
+    leaf: &mut LeafCard,
+    entity: &EntityRef,
+    st: Option<&EntityState>,
+    icons: &IconResolver,
+    tr: Option<&Translations>,
+    artwork: Option<&slint::Image>,
+    now: f64,
+) {
+    use hada_core::media::{self, MediaFeatures};
+    leaf.title = display_name(entity, st).into();
+    leaf.glyph = glyph_str(&icons.resolve(&entity.entity_id, st, entity.icon.as_deref()));
+    let Some(s) = st else {
+        leaf.subtitle = "—".into();
+        leaf.value_text = SharedString::default();
+        leaf.detail = SharedString::default();
+        leaf.powered = false;
+        leaf.playing = false;
+        leaf.has_artwork = false;
+        leaf.progress = -1.0;
+        return;
+    };
+    let f = MediaFeatures::of(s);
+    leaf.powered = !matches!(
+        s.state.as_str(),
+        "off" | "standby" | "unavailable" | "unknown"
+    );
+    leaf.playing = s.state == "playing";
+    leaf.subtitle = domain::state_word(&entity.entity_id, s, tr).into();
+    leaf.value_text = s.attr_str("media_title").unwrap_or("").into();
+    leaf.detail = media::subtitle(s).into();
+    leaf.can_play = f.play_pause;
+    leaf.can_previous = f.previous;
+    leaf.can_next = f.next;
+    leaf.can_power = f.power && !s.is_unavailable();
+    leaf.can_volume = f.volume;
+    leaf.can_mute = f.mute;
+    leaf.muted = s.attr_bool("is_volume_muted").unwrap_or(false);
+    leaf.volume = (s.attr_f64("volume_level").unwrap_or(0.0) * 100.0) as f32;
+    match media::progress(s, now).filter(|_| leaf.powered) {
+        Some((pos, dur)) => {
+            leaf.progress = (pos / dur) as f32;
+            leaf.progress_text =
+                format!("{} / {}", media::fmt_time(pos), media::fmt_time(dur)).into();
+        }
+        None => leaf.progress = -1.0,
+    }
+    match artwork.filter(|_| leaf.powered) {
+        Some(img) => {
+            leaf.artwork = img.clone();
+            leaf.has_artwork = true;
+        }
+        None => leaf.has_artwork = false,
     }
 }
 
@@ -931,6 +997,34 @@ impl Builder<'_> {
                             rows: rows_model.clone(),
                             max_items: forecast_columns(self.width_hint),
                         });
+                }
+            }
+            CardKind::Media { entity } => {
+                leaf.kind = 11;
+                rows_model.push(RowData {
+                    entity_id: entity.entity_id.as_ref().into(),
+                    ..RowData::default()
+                });
+                fill_media(
+                    &mut leaf,
+                    entity,
+                    self.ctx.store.get(&entity.entity_id),
+                    self.ctx.icons,
+                    self.ctx.translations,
+                    self.ctx.artworks.get(&entity.entity_id),
+                    hada_core::timefmt::now_unix(),
+                );
+                if let Some(slot) = &slot {
+                    self.index
+                        .entry(entity.entity_id.clone())
+                        .or_default()
+                        .push(RowRef::Media {
+                            slot: slot.clone(),
+                            entity: entity.clone(),
+                        });
+                }
+                if !self.media.contains(&entity.entity_id) {
+                    self.media.push(entity.entity_id.clone());
                 }
             }
             CardKind::Unsupported { entities } => {

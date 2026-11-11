@@ -115,6 +115,8 @@ jobs:
           script: scripts/android-smoke-test.sh target/android/hada.apk android-smoke
       - uses: actions/upload-artifact@v7
         if: always()
+        # Diagnostics only: an outage of the artifact service must not fail the test.
+        continue-on-error: true
         with:
           name: android-smoke-api${{ matrix.api }}
           path: android-smoke/

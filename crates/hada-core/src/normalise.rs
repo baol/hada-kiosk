@@ -238,6 +238,15 @@ pub fn card(c: &CardConfig) -> CardNode {
                 grid_opts(c, SECTION_COLUMNS, None),
             )
         }
+        "media-control" => {
+            let id = c.entity.clone().unwrap_or_default();
+            (
+                CardKind::Media {
+                    entity: entity_ref(&id, &c.name, &c.icon),
+                },
+                grid_opts(c, SECTION_COLUMNS, None),
+            )
+        }
         "weather-forecast" => {
             let id = c.entity.clone().unwrap_or_default();
             let forecast_type = c.forecast_type.as_deref().and_then(|t| {
@@ -548,7 +557,7 @@ mod tests {
             }
             other => panic!("expected a weather card, got {other:?}"),
         }
-        // grid of two media-control cards: grid is supported, children are not.
+        // grid of two media-control cards.
         let grid = cards.iter().find(|c| c.raw_type == "grid").unwrap();
         match &grid.kind {
             CardKind::Grid {
@@ -559,7 +568,9 @@ mod tests {
                 assert_eq!(*columns, 1);
                 assert!(!square);
                 assert_eq!(cards.len(), 2);
-                assert!(matches!(cards[0].kind, CardKind::Unsupported { .. }));
+                assert!(
+                    matches!(&cards[0].kind, CardKind::Media { entity } if &*entity.entity_id == "media_player.kitchen_speaker")
+                );
             }
             _ => panic!(),
         }

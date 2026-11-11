@@ -261,6 +261,53 @@ async fn full_session_against_mock_ha() {
         _ => unreachable!(),
     }
 
+    // Album art: downloaded beside the websocket, decoded, sent back as an event.
+    let art_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let art_url = format!(
+        "http://{}/api/media_player_proxy/media_player.av_receiver?token=t&cache=1",
+        art_server.local_addr().unwrap()
+    );
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (mut s, _) = art_server.accept().await.unwrap();
+        let mut buf = [0u8; 2048];
+        let n = s.read(&mut buf).await.unwrap();
+        assert!(String::from_utf8_lossy(&buf[..n])
+            .starts_with("GET /api/media_player_proxy/media_player.av_receiver?token=t&cache=1 "));
+        let img = image::RgbaImage::from_pixel(600, 600, image::Rgba([200, 30, 30, 255]));
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let png = png.into_inner();
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n",
+            png.len()
+        );
+        s.write_all(head.as_bytes()).await.unwrap();
+        s.write_all(&png).await.unwrap();
+    });
+    cmd_tx
+        .send(HaCommand::FetchArtwork {
+            entity_id: "media_player.av_receiver".into(),
+            url: art_url.clone(),
+        })
+        .await_free();
+    match recv_until(&mut ev_rx, |e| matches!(e, HaEvent::Artwork { .. })).await {
+        HaEvent::Artwork {
+            entity_id,
+            url,
+            image,
+        } => {
+            assert_eq!(entity_id, "media_player.av_receiver");
+            assert_eq!(url, art_url);
+            let a = image.expect("decoded artwork");
+            assert_eq!((a.width, a.height), (384, 384), "shrunk to MAX_SIDE");
+            assert_eq!(&a.rgba[..4], &[200, 30, 30, 255]);
+        }
+        _ => unreachable!(),
+    }
+
     // UI → HA: a toggle becomes switch.toggle targeted at the entity.
     let call = EntityAction::new("switch.table_lamp", Action::Toggle)
         .to_service_call()
