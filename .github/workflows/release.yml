@@ -208,13 +208,12 @@ jobs:
       - name: Build (arm64 + armv7)
         if: steps.key.outputs.ok == 'true'
         run: |
-          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          export CARGO_APK_RELEASE_KEYSTORE="$RUNNER_TEMP/release.keystore"
-          export CARGO_APK_RELEASE_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
-          scripts/build-apk.sh --release
+          export HADA_APK_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          export HADA_APK_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
+          scripts/build-apk.sh
           mkdir -p dist
-          cp target/release/apk/hada.apk dist/hada.apk
+          cp target/android/hada.apk dist/hada.apk
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --print-certs dist/hada.apk | grep -v "^WARNING"
           (cd dist && sha256sum hada.apk > hada.apk.sha256 && cat hada.apk.sha256)
           rm -f "$RUNNER_TEMP/release.keystore"
@@ -274,7 +273,7 @@ jobs:
           - \`install-kiosk.sh\`: kiosk installer pinned to this release
           NOTES
           if [ -f dist/hada.apk ]; then
-            echo '- `hada.apk`: Android app for Android 8.0 and newer (+ `.sha256`)' >> notes.md
+            echo '- `hada.apk`: Android app for Android 5.0 and newer (+ `.sha256`)' >> notes.md
           fi
           printf '\nSee the README for the one-line install, the options and how to undo kiosk mode.\n' >> notes.md
           if gh release view "$TAG" > /dev/null 2>&1; then

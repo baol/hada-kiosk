@@ -42,10 +42,8 @@ jobs:
           name: screenshots
           path: screenshots/*.png
 
-  # The Android app: the release APK for phones and tablets (arm64 + armv7, signed
-  # with a throwaway key), then an x86_64 build that an Android 8.0 emulator must
-  # start without crashing. Skia has no prebuilt armv7 library, so the first run
-  # builds it from source; the cache (shared with the release workflow) keeps it.
+  # The Android app (Android 5.0+): build the APK for phones and tablets (arm64 +
+  # armv7, throwaway key) and check its manifest.
   android:
     runs-on: ubuntu-24.04
     steps:
@@ -54,47 +52,59 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: android
-      - name: JDK 17 and a throwaway signing key
-        run: |
-          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
-          "$JAVA_HOME_17_X64/bin/keytool" -genkeypair -keystore "$RUNNER_TEMP/ci.keystore" -storepass android \
-            -keypass android -alias ci -keyalg RSA -keysize 2048 -validity 30 -dname "CN=hada CI" -noprompt
-          echo "CARGO_APK_RELEASE_KEYSTORE=$RUNNER_TEMP/ci.keystore" >> "$GITHUB_ENV"
-          echo "CARGO_APK_RELEASE_KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
       - name: APK for phones and tablets (arm64 + armv7)
         run: |
-          scripts/build-apk.sh --release
-          mkdir -p apk && cp target/release/apk/hada.apk apk/hada.apk && ls -l apk
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          scripts/build-apk.sh
       - name: Manifest of the APK
         run: |
           AAPT="$ANDROID_HOME/build-tools/35.0.1/aapt"
-          "$AAPT" dump badging apk/hada.apk | tee badging.txt
-          grep -q "sdkVersion:'26'" badging.txt
+          "$AAPT" dump badging target/android/hada.apk | tee badging.txt
+          grep -q "sdkVersion:'21'" badging.txt
           grep -q "uses-permission: name='android.permission.INTERNET'" badging.txt
           grep -q "native-code: 'arm64-v8a' 'armeabi-v7a'" badging.txt
-          "$AAPT" dump xmltree apk/hada.apk AndroidManifest.xml | grep -q "android.intent.category.HOME"
+          "$AAPT" dump xmltree target/android/hada.apk AndroidManifest.xml > manifest.txt
+          grep -q "android.intent.category.HOME" manifest.txt
+          grep -q "io.github.baol.hada.PrefsActivity" manifest.txt
+          grep -q "io.github.baol.hada.BootReceiver" manifest.txt
       - uses: actions/upload-artifact@v7
         with:
-          name: hada-apk-ci-signed
-          path: apk/hada.apk
+          name: hada-apk-test-key
+          path: target/android/hada.apk
+
+  # First start on emulators: Android 5.1 (API 22, like Fire OS 5) and Android 11.
+  android-emulator:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [22, 30]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: android-x86_64
       - name: APK for the emulator (x86_64)
-        run: scripts/build-apk.sh --release --target x86_64-linux-android
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          scripts/build-apk.sh --target x86_64-linux-android
       - name: Enable KVM for the emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Start on an Android 8.0 (API 26) emulator
+      - name: First start on Android API ${{ matrix.api }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 26
+          api-level: ${{ matrix.api }}
           arch: x86_64
           target: default
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           disable-animations: true
-          script: scripts/android-smoke-test.sh target/release/apk/hada.apk android-smoke
+          script: scripts/android-smoke-test.sh target/android/hada.apk android-smoke
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: android-smoke
+          name: android-smoke-api${{ matrix.api }}
           path: android-smoke/

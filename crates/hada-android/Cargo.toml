@@ -1,6 +1,6 @@
 [package]
 name = "hada-android"
-description = "hada as an Android app (APK built with cargo-apk)"
+description = "hada as an Android app (Android 5.0+), packaged by scripts/build-apk.sh"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,46 +16,11 @@ hada = { path = "../hada", default-features = false }
 hada-core = { path = "../hada-core" }
 tracing.workspace = true
 
+# No Slint Android backend: it draws with Skia, which needs Android 8.0. The
+# software renderer (as on the Raspberry Pi) draws into the window instead.
 [target.'cfg(target_os = "android")'.dependencies]
-slint = { version = "1.18", default-features = false, features = ["std", "compat-1-18", "backend-android-activity-06"] }
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-18", "renderer-software", "software-renderer-systemfonts"] }
+android-activity = { version = "0.6", features = ["native-activity"] }
+ndk = { version = "0.9", default-features = false }   # not "nativewindow": libnativewindow.so is Android 8+
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
 jni = "0.22"
-
-# --- APK (cargo apk build -p hada-android --release) -------------------------
-[package.metadata.android]
-package = "io.github.baol.hada"
-apk_name = "hada"
-build_targets = ["aarch64-linux-android", "armv7-linux-androideabi"]
-resources = "res"
-strip = "strip"
-
-# Skia, which Slint draws with on Android, is built for Android 8.0 (API 26).
-[package.metadata.android.sdk]
-min_sdk_version = 26
-target_sdk_version = 34
-
-[[package.metadata.android.uses_permission]]
-name = "android.permission.INTERNET"
-
-[[package.metadata.android.uses_permission]]
-name = "android.permission.ACCESS_NETWORK_STATE"
-
-[package.metadata.android.application]
-label = "hada"
-icon = "@mipmap/ic_launcher"
-
-[package.metadata.android.application.activity]
-# Rotation and keyboard changes are handled by Slint, without restarting the activity.
-config_changes = "orientation|keyboardHidden|keyboard|screenSize|screenLayout|smallestScreenSize|uiMode|density|navigation"
-launch_mode = "singleTask"
-exported = true
-
-# Started from the app drawer.
-[[package.metadata.android.application.activity.intent_filter]]
-actions = ["android.intent.action.MAIN"]
-categories = ["android.intent.category.LAUNCHER"]
-
-# Offered as Home app: choose hada (Always) for a wall panel that boots into the dashboard.
-[[package.metadata.android.application.activity.intent_filter]]
-actions = ["android.intent.action.MAIN"]
-categories = ["android.intent.category.HOME", "android.intent.category.DEFAULT"]

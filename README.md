@@ -71,11 +71,11 @@ This restores the boot target, display manager, seatd and groups recorded at ins
 
 ## 2c. Android phone or tablet
 
-For Android 8.0 or newer. On the device, download [`hada.apk`](https://github.com/baol/hada-kiosk/releases/latest/download/hada.apk), open it and allow the install.
+For Android 5.0 or newer, including old Amazon Fire tablets. On the device, download [`hada.apk`](https://github.com/baol/hada-kiosk/releases/latest/download/hada.apk), open it and allow the install (on a Fire: Settings > Security & Privacy > *Apps from Unknown Sources*).
 
 On first start, enter the Home Assistant address, then a username and password (used once; only a sign-in token is kept), or no password for trusted networks, or a long-lived token. Rotation is set there too. Tap the status chip on the dashboard to change these later.
 
-For a wall panel, press Home and choose hada, *Always*: the device starts straight into the dashboard and the screen stays on. To undo, pick another Home app in Android settings > Apps > Default apps.
+For a wall panel, press Home and choose hada, *Always*: the device starts straight into the dashboard and the screen stays on. To undo, pick another Home app in Android settings > Apps > Default apps. Where the Home app cannot be changed (Fire tablets), keep *Start when the device starts* on.
 
 ## Options
 
@@ -104,7 +104,7 @@ sudo apt install libfontconfig-dev libinput-dev libudev-dev libxkbcommon-dev lib
 cargo run --release -- --url http://homeassistant.local:8123 --token-file ha-token
 ```
 
-`cargo test --workspace --features screenshot` runs the tests; `scripts/screenshots.sh` renders the demo dashboard without a display; `scripts/build-apk.sh` builds the Android app (needs the Android SDK and a JDK 17+). Issues and pull requests are welcome.
+`cargo test --workspace --features screenshot` runs the tests; `scripts/screenshots.sh` renders the demo dashboard without a display; `scripts/build-apk.sh` builds the Android app (needs the Android SDK and a JDK 17+, no Gradle). Issues and pull requests are welcome.
 
 ## License
 

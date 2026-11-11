@@ -75,9 +75,6 @@ struct Cli {
     /// Screenshot size, e.g. 1024x600
     #[arg(long, default_value = "1024x600")]
     size: String,
-    /// --screenshot of the Android preferences page instead (with this error text, may be empty)
-    #[arg(long, hide = true)]
-    prefs_page: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -196,7 +193,6 @@ fn main() -> anyhow::Result<()> {
             events: cli.events.as_deref(),
             translations: cli.translations.as_deref(),
             forecast: cli.forecast.as_deref(),
-            prefs_page: cli.prefs_page.as_deref(),
         };
         return screenshot(out, &cli.size, source, fixtures, view, &language);
     }
@@ -232,7 +228,6 @@ struct Fixtures<'a> {
     events: Option<&'a Path>,
     translations: Option<&'a Path>,
     forecast: Option<&'a Path>,
-    prefs_page: Option<&'a str>,
 }
 
 #[cfg(feature = "screenshot")]
@@ -250,7 +245,6 @@ fn screenshot(
         events,
         translations,
         forecast,
-        prefs_page,
     } = fixtures;
     let (w, h) = size
         .split_once('x')
@@ -311,16 +305,6 @@ fn screenshot(
         }
     }
     ui.set_status_text("Demo".into());
-    if let Some(error) = prefs_page {
-        ui.set_version(VERSION.into());
-        ui.set_prefs_url("http://192.168.1.10:8123/lovelace/kiosk".into());
-        ui.set_prefs_username("kiosk".into());
-        ui.set_prefs_password("secret".into());
-        ui.set_prefs_rotation(2);
-        ui.set_prefs_error(error.into());
-        ui.set_prefs_signed_in(!error.is_empty());
-        ui.set_show_prefs(true);
-    }
     headless::render_png(w, h, &out)?;
     tracing::info!("wrote {}", out.display());
     Ok(())
