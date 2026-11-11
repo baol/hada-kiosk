@@ -204,6 +204,8 @@ views:
           [AV receiver](http://receiver.local)
           [Wi-Fi repeater](http://repeater.local)
         title: Links
+      - type: media-control
+        entity: media_player.av_receiver
   - title: Kiosk
     path: kiosk
     icon: mdi:tablet-dashboard

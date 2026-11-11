@@ -4,10 +4,12 @@
 //! This crate has no UI dependency so that everything in it can be unit tested.
 
 pub mod actions;
+pub mod artwork;
 pub mod domain;
 pub mod ha;
 pub mod icons;
 pub mod lovelace;
+pub mod media;
 pub mod model;
 pub mod normalise;
 pub mod state;

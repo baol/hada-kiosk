@@ -570,6 +570,133 @@ export component WeatherCard inherits Card {
     }
 }
 
+// `media-control`: artwork, title (value-text), artist · album (detail), player name
+// (title), state (subtitle), transport controls, progress and volume.
+component RoundButton {
+    in property <string> glyph;
+    in property <bool> big;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: root.big ? 64px : 48px;
+    height: self.width;
+    Rectangle {
+        border-radius: self.width / 2;
+        background: root.big ? (ta.pressed ? Theme.accent.darker(0.2) : Theme.accent)
+                             : (ta.pressed ? Theme.pressed : Theme.card-raised);
+        opacity: root.enabled ? 1 : 0.35;
+        Icon { glyph: root.glyph; size: root.big ? 34px : 26px; color: root.big ? #3a2a00 : Theme.text; }
+    }
+    ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+export component MediaCard inherits Card {
+    in property <LeafCard> card;
+    property <string> id: root.card.rows.length > 0 ? root.card.rows[0].entity-id : "";
+    property <length> art: 104px;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 14px;
+            Rectangle {
+                width: root.art;
+                height: root.art;
+                border-radius: 10px;
+                clip: true;
+                background: root.card.playing ? Theme.accent.with-alpha(0.18) : Theme.card-raised;
+                if root.card.has-artwork: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: root.card.artwork;
+                    image-fit: cover;
+                }
+                if !root.card.has-artwork: Icon {
+                    glyph: root.card.glyph;
+                    size: root.art * 0.45;
+                    color: root.card.playing ? Theme.accent : Theme.text-dim;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                horizontal-stretch: 1;
+                Text { text: root.card.title; color: Theme.text-dim; font-size: Theme.font-s; overflow: elide; }
+                Text {
+                    text: root.card.value-text != "" ? root.card.value-text : root.card.subtitle;
+                    color: root.card.powered ? Theme.text : Theme.text-faint;
+                    font-size: Theme.font-l;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                if root.card.detail != "": Text { text: root.card.detail; color: Theme.text-dim; font-size: Theme.font-m; overflow: elide; }
+                if root.card.value-text != "": Text { text: root.card.subtitle; color: Theme.text-faint; font-size: Theme.font-s; overflow: elide; }
+            }
+            if root.card.can-power: VerticalLayout {
+                alignment: start;
+                RoundButton {
+                    glyph: "\u{F0425}";  // power
+                    clicked => { Actions.action(root.id, ActionKind.toggle, 0, root.card.card-id); }
+                }
+            }
+        }
+        if root.card.progress >= 0: VerticalLayout {
+            spacing: 4px;
+            Rectangle {
+                height: 4px;
+                border-radius: 2px;
+                background: Theme.track;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * clamp(root.card.progress, 0, 1);
+                    height: parent.height;
+                    border-radius: 2px;
+                    background: Theme.accent;
+                }
+            }
+            Text { text: root.card.progress-text; color: Theme.text-faint; font-size: 12px; horizontal-alignment: right; }
+        }
+        if root.card.powered && (root.card.can-play || root.card.can-previous || root.card.can-next): HorizontalLayout {
+            alignment: center;
+            spacing: 24px;
+            if root.card.can-previous: VerticalLayout {
+                alignment: center;
+                RoundButton {
+                    glyph: "\u{F04AE}";  // skip-previous
+                    clicked => { Actions.action(root.id, ActionKind.media-previous, 0, root.card.card-id); }
+                }
+            }
+            if root.card.can-play: RoundButton {
+                big: true;
+                glyph: root.card.playing ? "\u{F03E4}" : "\u{F040A}";  // pause / play
+                clicked => { Actions.action(root.id, ActionKind.media-play-pause, 0, root.card.card-id); }
+            }
+            if root.card.can-next: VerticalLayout {
+                alignment: center;
+                RoundButton {
+                    glyph: "\u{F04AD}";  // skip-next
+                    clicked => { Actions.action(root.id, ActionKind.media-next, 0, root.card.card-id); }
+                }
+            }
+        }
+        if root.card.powered && root.card.can-volume: HorizontalLayout {
+            spacing: 8px;
+            if root.card.can-mute: IconButton {
+                compact: true;
+                glyph: root.card.muted ? "\u{F0581}" : "\u{F057E}";  // volume-off / volume-high
+                clicked => { Actions.action(root.id, ActionKind.mute, root.card.muted ? 0 : 1, root.card.card-id); }
+            }
+            ValueSlider {
+                value: root.card.volume;
+                minimum: 0;
+                maximum: 100;
+                step: 1;
+                unit: "%";
+                changed(v) => { Actions.action(root.id, ActionKind.set-volume, v, root.card.card-id); }
+            }
+        }
+    }
+}
+
 export component MarkdownCard inherits Card {
     in property <LeafCard> card;
     VerticalLayout {
@@ -647,6 +774,7 @@ export component LeafCardView inherits VerticalLayout {
     if root.card.kind == 8 || root.card.kind == 5: PlaceholderCard { card: root.card; }
     if root.card.kind == 9: CalendarCard { card: root.card; }
     if root.card.kind == 10: WeatherCard { card: root.card; }
+    if root.card.kind == 11: MediaCard { card: root.card; }
 }
 
 // A `grid` card: children in rows of `grid-columns` (positions from Rust).

@@ -25,7 +25,12 @@ pub enum HttpError {
 #[derive(Debug, Clone)]
 pub struct Response {
     pub status: u16,
+    /// The body as text (lossy UTF-8).
     pub body: String,
+    /// The body as received (images).
+    pub bytes: Vec<u8>,
+    /// `Location` header of a redirect.
+    pub location: Option<String>,
 }
 
 impl Response {
@@ -33,6 +38,10 @@ impl Response {
         serde_json::from_str(&self.body).ok()
     }
 }
+
+/// Largest response read (album art is far smaller).
+const MAX_RESPONSE: u64 = 8 * 1024 * 1024;
+const MAX_REDIRECTS: usize = 3;
 
 /// `POST {base}{path}` with the given content type and body.
 pub async fn post(
@@ -42,6 +51,40 @@ pub async fn post(
     body: &str,
 ) -> Result<Response, HttpError> {
     let url = url::Url::parse(base.trim()).map_err(|e| HttpError::Url(e.to_string()))?;
+    let (host, port, _) = endpoint(&url)?;
+    let prefix = url.path().trim_end_matches('/');
+    let request = format!(
+        "POST {prefix}{path} HTTP/1.1\r\nHost: {host}:{port}\r\nUser-Agent: hada\r\nAccept: application/json\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    send(&url, request.as_bytes()).await
+}
+
+/// `GET url`, following up to three redirects. For images: see [`Response::bytes`].
+pub async fn get(url: &str) -> Result<Response, HttpError> {
+    let mut url = url::Url::parse(url.trim()).map_err(|e| HttpError::Url(e.to_string()))?;
+    for _ in 0..=MAX_REDIRECTS {
+        let (host, port, _) = endpoint(&url)?;
+        let target = match url.query() {
+            Some(q) => format!("{}?{q}", url.path()),
+            None => url.path().to_string(),
+        };
+        let request = format!(
+            "GET {target} HTTP/1.1\r\nHost: {host}:{port}\r\nUser-Agent: hada\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+        );
+        let resp = send(&url, request.as_bytes()).await?;
+        match (resp.status, &resp.location) {
+            (301 | 302 | 303 | 307 | 308, Some(loc)) => {
+                url = url.join(loc).map_err(|e| HttpError::Url(e.to_string()))?;
+            }
+            _ => return Ok(resp),
+        }
+    }
+    Err(HttpError::Url("too many redirects".into()))
+}
+
+/// Host, port and TLS for an http(s)/ws(s) URL.
+fn endpoint(url: &url::Url) -> Result<(String, u16, bool), HttpError> {
     let host = url
         .host_str()
         .ok_or_else(|| HttpError::Url("missing host".into()))?
@@ -51,16 +94,16 @@ pub async fn post(
         "https" | "wss" => true,
         s => return Err(HttpError::Url(format!("unsupported scheme {s}"))),
     };
-    let port = url.port().unwrap_or(if tls { 443 } else { 80 });
-    let prefix = url.path().trim_end_matches('/');
-    let request = format!(
-        "POST {prefix}{path} HTTP/1.1\r\nHost: {host}:{port}\r\nUser-Agent: hada\r\nAccept: application/json\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
+    Ok((host, url.port().unwrap_or(if tls { 443 } else { 80 }), tls))
+}
+
+async fn send(url: &url::Url, request: &[u8]) -> Result<Response, HttpError> {
+    let (host, port, tls) = endpoint(url)?;
     let fut = async {
         let tcp = TcpStream::connect((host.as_str(), port))
             .await
             .map_err(|e| HttpError::Connect(e.to_string()))?;
+        let mut raw = Vec::new();
         if tls {
             let config = rustls_config();
             let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
@@ -70,17 +113,14 @@ pub async fn post(
                 .connect(name, tcp)
                 .await
                 .map_err(|e| HttpError::Connect(e.to_string()))?;
-            stream.write_all(request.as_bytes()).await?;
-            let mut raw = Vec::new();
-            stream.read_to_end(&mut raw).await?;
-            parse(&raw)
+            stream.write_all(request).await?;
+            stream.take(MAX_RESPONSE).read_to_end(&mut raw).await?;
         } else {
             let mut stream = tcp;
-            stream.write_all(request.as_bytes()).await?;
-            let mut raw = Vec::new();
-            stream.read_to_end(&mut raw).await?;
-            parse(&raw)
+            stream.write_all(request).await?;
+            stream.take(MAX_RESPONSE).read_to_end(&mut raw).await?;
         }
+        parse(&raw)
     };
     tokio::time::timeout(TIMEOUT, fut)
         .await
@@ -108,11 +148,13 @@ pub fn parse(raw: &[u8]) -> Result<Response, HttpError> {
         .ok_or(HttpError::Malformed)?;
     let mut chunked = false;
     let mut length: Option<usize> = None;
+    let mut location = None;
     for l in lines {
         if let Some((k, v)) = l.split_once(':') {
             match k.trim().to_ascii_lowercase().as_str() {
                 "transfer-encoding" if v.trim().eq_ignore_ascii_case("chunked") => chunked = true,
                 "content-length" => length = v.trim().parse().ok(),
+                "location" => location = Some(v.trim().to_string()),
                 _ => {}
             }
         }
@@ -127,6 +169,8 @@ pub fn parse(raw: &[u8]) -> Result<Response, HttpError> {
     Ok(Response {
         status,
         body: String::from_utf8_lossy(&body).into_owned(),
+        bytes: body,
+        location,
     })
 }
 
@@ -192,6 +236,34 @@ mod tests {
         assert_eq!(r.status, 400);
         assert_eq!(r.body, "abcde");
         assert!(parse(b"garbage").is_err());
+        let r = parse(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\n\x89PN\xff").unwrap();
+        assert_eq!(r.bytes, b"\x89PN\xff", "binary bodies are kept as they are");
+        let r = parse(b"HTTP/1.1 302 Found\r\nLocation: /cover.jpg\r\nContent-Length: 0\r\n\r\n")
+            .unwrap();
+        assert_eq!(r.location.as_deref(), Some("/cover.jpg"));
+    }
+
+    #[tokio::test]
+    async fn get_follows_redirects() {
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            for reply in [
+                &b"HTTP/1.1 302 Found\r\nLocation: /art.png?x=1\r\nContent-Length: 0\r\n\r\n"[..],
+                &b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\n\x00\x01\x02"[..],
+            ] {
+                let (mut s, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 1024];
+                let n = s.read(&mut buf).await.unwrap();
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                assert!(req.starts_with("GET /"), "{req}");
+                s.write_all(reply).await.unwrap();
+            }
+        });
+        let r = get(&format!("{base}/start")).await.unwrap();
+        assert_eq!(r.status, 200);
+        assert_eq!(r.bytes, vec![0, 1, 2]);
     }
 
     #[test]

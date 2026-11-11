@@ -21,6 +21,8 @@ rustls-pki-types = "1"
 webpki-roots = "1"
 # Local UTC offset for forecast labels (already in the tree through Slint).
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Album art (JPEG/PNG/WebP), already in the tree through Slint.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }

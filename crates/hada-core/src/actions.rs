@@ -30,6 +30,16 @@ pub enum Action {
     SetValue(f64),
     /// `climate.set_temperature`.
     SetTemperature(f64),
+    /// `media_player.media_play_pause`.
+    MediaPlayPause,
+    /// `media_player.media_previous_track`.
+    MediaPrevious,
+    /// `media_player.media_next_track`.
+    MediaNext,
+    /// `media_player.volume_set`, 0.0–1.0.
+    VolumeSet(f64),
+    /// `media_player.volume_mute`.
+    VolumeMute(bool),
     /// Explicit `perform-action` from the dashboard config.
     Perform {
         domain: String,
@@ -166,6 +176,15 @@ impl EntityAction {
             Action::SetTemperature(t) => {
                 ServiceCall::new("climate", "set_temperature", id).with("temperature", json!(t))
             }
+            Action::MediaPlayPause => ServiceCall::new("media_player", "media_play_pause", id),
+            Action::MediaPrevious => ServiceCall::new("media_player", "media_previous_track", id),
+            Action::MediaNext => ServiceCall::new("media_player", "media_next_track", id),
+            Action::VolumeSet(v) => ServiceCall::new("media_player", "volume_set", id).with(
+                "volume_level",
+                json!((v.clamp(0.0, 1.0) * 100.0).round() / 100.0),
+            ),
+            Action::VolumeMute(m) => ServiceCall::new("media_player", "volume_mute", id)
+                .with("is_volume_muted", json!(m)),
             Action::Perform {
                 domain,
                 service,
@@ -208,6 +227,37 @@ pub fn header_toggle(ids: &[Arc<str>], on: bool) -> ServiceCall {
         if on { "turn_on" } else { "turn_off" },
         ids,
     )
+}
+
+#[cfg(test)]
+mod media_tests {
+    use super::*;
+
+    #[test]
+    fn media_services() {
+        let call = |a| {
+            EntityAction::new("media_player.m", a)
+                .to_service_call()
+                .unwrap()
+        };
+        assert_eq!(call(Action::MediaPlayPause).service, "media_play_pause");
+        assert_eq!(call(Action::MediaPrevious).service, "media_previous_track");
+        assert_eq!(call(Action::MediaNext).service, "media_next_track");
+        let v = call(Action::VolumeSet(0.456));
+        assert_eq!(
+            (v.domain.as_str(), v.service.as_str()),
+            ("media_player", "volume_set")
+        );
+        assert_eq!(v.service_data["volume_level"], json!(0.46));
+        assert_eq!(
+            call(Action::VolumeSet(3.0)).service_data["volume_level"],
+            json!(1.0)
+        );
+        let m = call(Action::VolumeMute(true));
+        assert_eq!(m.service, "volume_mute");
+        assert_eq!(m.service_data["is_volume_muted"], json!(true));
+        assert_eq!(m.target, Some(json!({"entity_id": "media_player.m"})));
+    }
 }
 
 #[cfg(test)]

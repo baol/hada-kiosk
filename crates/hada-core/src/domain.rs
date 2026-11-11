@@ -152,6 +152,13 @@ pub fn format_state_at(entity_id: &str, st: &EntityState, now: f64) -> String {
     format_state_tr(entity_id, st, now, None)
 }
 
+/// Only the state word ("Playing", or HA's translation), without extra details.
+pub fn state_word(entity_id: &str, st: &EntityState, tr: Option<&Translations>) -> String {
+    tr.and_then(|t| t.state(domain_of(entity_id), st.device_class(), &st.state))
+        .map(str::to_string)
+        .unwrap_or_else(|| pretty_word(&st.state))
+}
+
 /// State text using Home Assistant's translations when available.
 pub fn format_state_tr(
     entity_id: &str,
