@@ -75,6 +75,8 @@ jobs:
   # First start on emulators: Android 5.1 (API 22, like Fire OS 5) and Android 11.
   android-emulator:
     runs-on: ubuntu-24.04
+    # A hung emulator should fail, not block the PR for hours (a normal run takes ~5 min).
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
