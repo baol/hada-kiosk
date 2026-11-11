@@ -10,7 +10,8 @@ PKG=io.github.baol.hada
 mkdir -p "$OUT"
 
 adb install -r "$APK"
-adb logcat -c
+# Only to shorten the log; some Android 8 emulators refuse to clear it.
+adb logcat -c || echo "(log not cleared)"
 adb shell am start -W -n "$PKG/android.app.NativeActivity"
 sleep 30   # first start on a software-rendered emulator is slow
 
@@ -19,7 +20,10 @@ adb logcat -d > "$OUT/logcat.txt"
 echo "--- hada log"
 grep -E "[ /]hada *:" "$OUT/logcat.txt" || true
 
-PID="$(adb shell pidof "$PKG" | tr -d '\r' || true)"
+PID="$(adb shell pidof "$PKG" 2> /dev/null | tr -d '\r' || true)"
+if [ -z "$PID" ]; then   # older toybox without pidof
+  PID="$(adb shell ps -A 2> /dev/null | awk -v p="$PKG" '$NF == p { print $2 }' | tr -d '\r' || true)"
+fi
 if [ -z "$PID" ]; then
   echo "hada is not running after start"
   grep -E -A20 "FATAL|Fatal signal|$PKG" "$OUT/logcat.txt" | head -80 || true
