@@ -1,7 +1,7 @@
-//! Preferences page of the Android app: what is saved, how it turns into a
-//! Home Assistant session, and the page's callbacks. Platform-specific parts
-//! (where files live, how rotation is applied) come in through [`Platform`].
-//! The Linux binary does not use this module.
+//! Preferences of the Android app: what is saved, how it turns into a Home
+//! Assistant session, and what happens when the preferences screen closes. The
+//! screen itself and other device parts (where files live, rotation) come in
+//! through [`Platform`]. The Linux binary does not use this module.
 
 use crate::{start_session, AppWindow, Session};
 use hada_core::ha::ws::split_dashboard_url;
@@ -147,6 +147,36 @@ pub fn session_config(
     (cfg, view)
 }
 
+/// What the preferences screen shows when it opens.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrefsView {
+    pub prefs: Prefs,
+    /// Why it opened, e.g. "Sign-in failed: wrong username or password".
+    pub error: String,
+    /// Signed in before: offer "Sign out".
+    pub signed_in: bool,
+}
+
+/// What the user entered on the preferences screen.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrefsInput {
+    pub url: String,
+    pub username: String,
+    /// Used for this sign-in only, never saved.
+    pub password: String,
+    pub token: String,
+    pub rotation: Rotation,
+}
+
+/// How the preferences screen was closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrefsResult {
+    Saved(PrefsInput),
+    SignOut,
+    /// Closed without saving.
+    Cancelled,
+}
+
 /// What the app needs from the device.
 pub struct Platform {
     /// Private folder for the preferences, the refresh token and caches.
@@ -155,6 +185,24 @@ pub struct Platform {
     pub language: String,
     /// Lock the screen orientation (or let it follow the sensor).
     pub apply_rotation: Box<dyn Fn(Rotation)>,
+    /// Show the preferences screen; its result comes back through
+    /// [`PrefsHandle::deliver`].
+    pub open_prefs: Box<dyn Fn(&PrefsView)>,
+}
+
+/// Hands the preferences screen's result back to the app.
+#[derive(Clone)]
+pub struct PrefsHandle(Rc<RefCell<Controller>>);
+
+impl PrefsHandle {
+    pub fn deliver(&self, result: PrefsResult) {
+        let mut c = self.0.borrow_mut();
+        match result {
+            PrefsResult::Saved(input) => c.save(input),
+            PrefsResult::SignOut => c.sign_out(),
+            PrefsResult::Cancelled => c.show_setup_hint(),
+        }
+    }
 }
 
 struct Controller {
@@ -162,81 +210,79 @@ struct Controller {
     platform: Platform,
     prefs: Option<Prefs>,
     session: Option<Session>,
-    /// Waiting for the first answer after "Save & connect".
+    /// Just saved: report the first failure on the preferences screen.
     pending: bool,
-    connected_once: bool,
 }
 
-/// Wire the preferences page and start: connect with the saved preferences, or show
-/// the page when there are none.
-pub fn run_with_prefs(ui: &AppWindow, platform: Platform) {
+/// Start with the saved preferences, or open the preferences screen when there are
+/// none. Tapping the status chip opens it later.
+pub fn run_with_prefs(ui: &AppWindow, platform: Platform) -> PrefsHandle {
     let prefs = Prefs::load(&platform.data_dir).filter(Prefs::is_complete);
     (platform.apply_rotation)(prefs.as_ref().map(|p| p.rotation).unwrap_or_default());
-    ui.set_version(crate::VERSION.into());
     let ctl = Rc::new(RefCell::new(Controller {
         ui: ui.as_weak(),
         platform,
         prefs,
         session: None,
         pending: false,
-        connected_once: false,
     }));
-
     let c = ctl.clone();
-    ui.on_status_clicked(move || c.borrow_mut().open_page(""));
-    let c = ctl.clone();
-    ui.on_prefs_save(move || c.borrow_mut().save());
-    let c = ctl.clone();
-    ui.on_prefs_cancel(move || c.borrow_mut().cancel());
-    let c = ctl.clone();
-    ui.on_prefs_sign_out(move || c.borrow_mut().sign_out());
+    ui.on_status_clicked(move || c.borrow().open(""));
     let c = Rc::downgrade(&ctl);
     crate::set_event_observer(move |ev| {
         if let Some(c) = c.upgrade() {
             c.borrow_mut().observe(ev);
         }
     });
-
-    let mut c = ctl.borrow_mut();
-    if c.prefs.is_some() {
-        c.connect("");
-    } else {
-        c.open_page("");
+    {
+        let mut c = ctl.borrow_mut();
+        if c.prefs.is_some() {
+            c.connect("");
+        } else {
+            c.show_setup_hint();
+            c.open("");
+        }
     }
+    PrefsHandle(ctl)
 }
 
 impl Controller {
-    fn open_page(&mut self, error: &str) {
-        let Some(ui) = self.ui.upgrade() else { return };
-        let p = self.prefs.clone().unwrap_or_default();
-        ui.set_prefs_url(p.url.as_str().into());
-        ui.set_prefs_username(p.username.as_str().into());
-        ui.set_prefs_password("".into());
-        ui.set_prefs_token(p.token.as_str().into());
-        ui.set_prefs_rotation(p.rotation.index());
-        ui.set_prefs_error(error.into());
-        ui.set_prefs_busy(false);
-        ui.set_prefs_signed_in(self.prefs.is_some());
-        ui.set_show_prefs(true);
+    fn open(&self, error: &str) {
+        let view = PrefsView {
+            prefs: self.prefs.clone().unwrap_or_default(),
+            error: error.to_string(),
+            signed_in: self.prefs.is_some(),
+        };
+        (self.platform.open_prefs)(&view);
     }
 
-    fn save(&mut self) {
-        let Some(ui) = self.ui.upgrade() else { return };
-        let password = ui.get_prefs_password().to_string();
-        let token = ui.get_prefs_token().to_string();
+    /// Nothing to show yet: the status chip says how to start.
+    fn show_setup_hint(&self) {
+        if self.prefs.is_none() {
+            if let Some(ui) = self.ui.upgrade() {
+                ui.set_status_text("Tap to set up".into());
+                ui.set_connected(false);
+            }
+        }
+    }
+
+    fn save(&mut self, input: PrefsInput) {
         let prefs = Prefs {
-            url: normalise_url(&ui.get_prefs_url()),
-            username: ui.get_prefs_username().trim().to_string(),
-            method: method_for(&token, &password),
-            token: token.trim().to_string(),
-            rotation: Rotation::from_index(ui.get_prefs_rotation()),
+            url: normalise_url(&input.url),
+            username: input.username.trim().to_string(),
+            method: method_for(&input.token, &input.password),
+            token: input.token.trim().to_string(),
+            rotation: input.rotation,
         };
         if url::Url::parse(&prefs.url).is_err() || prefs.url.is_empty() {
-            ui.set_prefs_error("That address is not valid, e.g. http://192.168.1.10:8123".into());
+            self.open_with(
+                &prefs,
+                "That address is not valid, e.g. http://192.168.1.10:8123",
+            );
             return;
         }
         if prefs.method == Method::Password && prefs.username.is_empty() {
-            ui.set_prefs_error("Enter the username that goes with the password.".into());
+            self.open_with(&prefs, "Enter the username that goes with the password.");
             return;
         }
         // A new server or new credentials: forget the old refresh token.
@@ -247,16 +293,22 @@ impl Controller {
             let _ = std::fs::remove_file(self.platform.data_dir.join(AUTH_FILE));
         }
         if let Err(e) = prefs.save(&self.platform.data_dir) {
-            ui.set_prefs_error(format!("Cannot save the settings: {e}").into());
+            self.open_with(&prefs, &format!("Cannot save the settings: {e}"));
             return;
         }
         (self.platform.apply_rotation)(prefs.rotation);
         self.prefs = Some(prefs);
-        ui.set_prefs_password("".into());
-        ui.set_prefs_error("".into());
-        ui.set_prefs_busy(true);
-        self.connect(&password);
+        self.connect(&input.password);
         self.pending = true;
+    }
+
+    /// Reopen with what was typed (not saved) and an error.
+    fn open_with(&self, prefs: &Prefs, error: &str) {
+        (self.platform.open_prefs)(&PrefsView {
+            prefs: prefs.clone(),
+            error: error.to_string(),
+            signed_in: self.prefs.is_some(),
+        });
     }
 
     fn connect(&mut self, password: &str) {
@@ -266,19 +318,12 @@ impl Controller {
         if let Some(old) = self.session.take() {
             old.stop();
         }
-        self.connected_once = false;
         let dir = &self.platform.data_dir;
         let (cfg, view) = session_config(&prefs, password, dir, &self.platform.language);
         tracing::info!("connecting to {} ({:?})", cfg.base_url, prefs.method);
         match start_session(&ui, cfg, view, Some(dir.join("cache"))) {
             Ok(s) => self.session = Some(s),
-            Err(e) => self.open_page(&format!("Cannot start: {e}")),
-        }
-    }
-
-    fn cancel(&mut self) {
-        if let Some(ui) = self.ui.upgrade() {
-            ui.set_show_prefs(false);
+            Err(e) => self.open(&format!("Cannot start: {e}")),
         }
     }
 
@@ -288,48 +333,33 @@ impl Controller {
         }
         let dir = &self.platform.data_dir;
         let _ = std::fs::remove_file(dir.join(AUTH_FILE));
-        if let Some(p) = &mut self.prefs {
-            p.token.clear();
-            p.method = Method::TrustedNetworks;
-            let _ = p.save(dir);
-        }
-        let keep = self.prefs.take();
-        self.open_page("Signed out.");
-        // Keep the address and rotation in the fields for the next sign-in.
-        if let (Some(ui), Some(p)) = (self.ui.upgrade(), keep) {
-            ui.set_prefs_url(p.url.as_str().into());
-            ui.set_prefs_username(p.username.as_str().into());
-            ui.set_prefs_rotation(p.rotation.index());
-            self.prefs = None;
-        }
+        let mut kept = self.prefs.take().unwrap_or_default();
+        kept.token.clear();
+        kept.method = Method::TrustedNetworks;
+        let _ = std::fs::remove_file(dir.join(PREFS_FILE));
+        self.show_setup_hint();
+        // Keep the address, username and rotation in the form for the next sign-in.
+        self.open_with(&kept, "Signed out.");
     }
 
     fn observe(&mut self, ev: &HaEvent) {
-        let Some(ui) = self.ui.upgrade() else { return };
         match ev {
-            HaEvent::Connected { .. } => {
-                self.connected_once = true;
-                if self.pending {
-                    self.pending = false;
-                    ui.set_prefs_busy(false);
-                    ui.set_show_prefs(false);
-                }
-            }
+            HaEvent::Connected { .. } => self.pending = false,
             HaEvent::AuthFailed(msg) => {
                 self.pending = false;
                 if let Some(s) = self.session.take() {
                     s.stop(); // retrying a wrong password helps nobody
                 }
-                self.open_page(&format!("Sign-in failed: {msg}"));
+                self.open(&format!("Sign-in failed: {msg}"));
             }
-            HaEvent::Disconnected { reason, .. } if !self.connected_once => {
-                // Never reached: show why, while the session keeps retrying.
+            // Right after "Save & connect" the address is probably wrong. At other
+            // times (e.g. Wi-Fi not up yet after a reboot) keep retrying quietly.
+            HaEvent::Disconnected { reason, .. } if self.pending => {
                 self.pending = false;
-                if !ui.get_show_prefs() || ui.get_prefs_busy() {
-                    self.open_page(&format!("Cannot reach Home Assistant: {reason}"));
-                } else {
-                    ui.set_prefs_error(format!("Cannot reach Home Assistant: {reason}").into());
+                if let Some(s) = self.session.take() {
+                    s.stop();
                 }
+                self.open(&format!("Cannot reach Home Assistant: {reason}"));
             }
             _ => {}
         }
