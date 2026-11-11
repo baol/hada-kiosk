@@ -20,8 +20,9 @@ CARGO_APK_VERSION=0.10.0
 : "${ANDROID_HOME:?set ANDROID_HOME to the Android SDK}"
 if [ ! -d "$ANDROID_HOME/ndk/$NDK_VERSION" ] || [ ! -d "$ANDROID_HOME/platforms/$PLATFORM" ] \
    || [ ! -d "$ANDROID_HOME/build-tools/$BUILD_TOOLS" ]; then
-  yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
-    "ndk;$NDK_VERSION" "platforms;$PLATFORM" "build-tools;$BUILD_TOOLS" > /dev/null
+  # `yes` answers the licence prompts; it ends with a broken pipe, which is fine.
+  { yes 2> /dev/null || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+    --sdk_root="$ANDROID_HOME" "ndk;$NDK_VERSION" "platforms;$PLATFORM" "build-tools;$BUILD_TOOLS" > /dev/null
 fi
 export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
 export ANDROID_NDK="$ANDROID_NDK_ROOT"   # skia-bindings builds Skia for armv7 itself (no prebuilt)
