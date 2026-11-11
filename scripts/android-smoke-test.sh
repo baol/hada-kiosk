@@ -28,9 +28,10 @@ front() {  # the activity in front
 
 pid() {
   local p
-  p="$(adb shell pidof "$PKG" 2> /dev/null | tr -d '\r' || true)"
+  # Only digits count: on Android 5 the shell prints "pidof: not found" instead.
+  p="$(adb shell pidof "$PKG" 2> /dev/null | tr -d '\r' | grep -E '^[0-9 ]+$' || true)"
   if [ -z "$p" ]; then   # older toybox without pidof
-    p="$(adb shell ps 2> /dev/null | awk -v n="$PKG" '$NF == n { print $2 }' | tr -d '\r' || true)"
+    p="$(adb shell ps 2> /dev/null | tr -d '\r' | awk -v n="$PKG" '$NF == n { print $2 }' || true)"
   fi
   echo "$p"
 }
