@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/hada-core", "crates/hada", "crates/hada-android"]
+members = ["crates/hada-core", "crates/hada", "crates/hada-android", "crates/hada-ios"]
 
 [workspace.package]
 version = "0.5.1"

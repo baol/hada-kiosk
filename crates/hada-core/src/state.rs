@@ -55,6 +55,10 @@ pub const KEPT_ATTRIBUTES: &[&str] = &[
     "options",
     "assumed_state",
     "restored",
+    // map card: people, device trackers and zones
+    "latitude",
+    "longitude",
+    "radius",
     // weather
     "temperature_unit",
     "apparent_temperature",

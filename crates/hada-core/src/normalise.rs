@@ -60,6 +60,7 @@ fn badge(b: &BadgeConfig) -> Option<Badge> {
             show_name: false,
             show_state: true,
             show_icon: true,
+            tap: badge_tap(id, None),
         }),
         BadgeConfig::Object(o) => {
             let id = o.entity.as_deref()?;
@@ -72,9 +73,64 @@ fn badge(b: &BadgeConfig) -> Option<Badge> {
                 show_name: o.show_name.unwrap_or(false),
                 show_state: o.show_state.unwrap_or(true),
                 show_icon: o.show_icon.unwrap_or(true),
+                tap: badge_tap(id, o.tap_action.as_ref()),
             })
         }
     }
+}
+
+/// A badge's tap: the configured toggle or action. HA's default opens the
+/// more-info dialog, which hada does not have; for scripts, scenes and buttons
+/// its main control runs them, so a tap does that.
+fn badge_tap(id: &str, tap: Option<&ActionConfig>) -> Option<ActionSpec> {
+    match tap.and_then(action) {
+        Some(a @ (ActionSpec::Toggle | ActionSpec::PerformAction { .. })) => Some(a),
+        None | Some(ActionSpec::MoreInfo)
+            if matches!(domain::domain_of(id), "script" | "scene" | "button") =>
+        {
+            Some(ActionSpec::Toggle)
+        }
+        _ => None,
+    }
+}
+
+/// A card's `entity` followed by its `entities`.
+fn card_entities(c: &CardConfig) -> Vec<EntityRef> {
+    let mut entities: Vec<EntityRef> = c
+        .entities
+        .iter()
+        .filter_map(|e| match e {
+            EntityRowConfig::Id(id) => Some(EntityRef::new(id)),
+            EntityRowConfig::Row(r) => r
+                .entity
+                .as_deref()
+                .map(|id| entity_ref(id, &r.name, &r.icon)),
+        })
+        .collect();
+    if let Some(id) = &c.entity {
+        entities.insert(0, entity_ref(id, &c.name, &c.icon));
+    }
+    entities
+}
+
+/// HA's `aspect_ratio` as height / width: "16:9" or "16x9" (width:height),
+/// "50%" (height as a share of the width), or a number (width / height).
+fn aspect_ratio(v: &serde_json::Value) -> Option<f32> {
+    let ratio = match v {
+        serde_json::Value::Number(n) => 1.0 / n.as_f64()?,
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if let Some(p) = s.strip_suffix('%') {
+                p.trim().parse::<f64>().ok()? / 100.0
+            } else if let Some((w, h)) = s.split_once([':', 'x']) {
+                h.trim().parse::<f64>().ok()? / w.trim().parse::<f64>().ok()?
+            } else {
+                1.0 / s.parse::<f64>().ok()?
+            }
+        }
+        _ => return None,
+    };
+    (ratio.is_finite() && ratio > 0.0).then_some(ratio as f32)
 }
 
 fn entity_ref(id: &str, name: &Option<String>, icon: &Option<String>) -> EntityRef {
@@ -122,19 +178,27 @@ pub fn card(c: &CardConfig) -> CardNode {
                 Some(a) => matches!(action(a), Some(ActionSpec::Toggle)),
                 None => domain::is_toggleable(domain::domain_of(&id)),
             };
-            let rows = 1 + features
-                .iter()
-                .filter(|f| !matches!(f, Feature::Unknown(_)))
-                .count() as u32;
+            let vertical = c.vertical.unwrap_or(false);
+            // HA's tile getGridOptions: one row per feature plus one when vertical,
+            // at least 3 columns when vertical and 6 otherwise.
+            let rows = 1
+                + u32::from(vertical)
+                + features
+                    .iter()
+                    .filter(|f| !matches!(f, Feature::Unknown(_)))
+                    .count() as u32;
+            let mut grid = grid_opts(c, 6, Some(rows));
+            grid.columns = grid.columns.max(if vertical { 3 } else { 6 });
+            grid.rows = grid.rows.map(|r| r.max(rows));
             (
                 CardKind::Tile {
                     entity: entity_ref(&id, &c.name, &c.icon),
                     features,
                     hide_state: c.hide_state.unwrap_or(false),
-                    vertical: c.vertical.unwrap_or(false),
+                    vertical,
                     tap_toggles,
                 },
-                grid_opts(c, 6, Some(rows)),
+                grid,
             )
         }
         "entities" => {
@@ -247,6 +311,20 @@ pub fn card(c: &CardConfig) -> CardNode {
                 grid_opts(c, SECTION_COLUMNS, None),
             )
         }
+        "map" => (
+            CardKind::Map {
+                entities: card_entities(c),
+                zoom: c.default_zoom.unwrap_or(14.0).clamp(0.0, 20.0) as u8,
+                // hada is dark, so "auto" is dark too.
+                dark: c.theme_mode.as_deref() != Some("light"),
+                aspect: c
+                    .aspect_ratio
+                    .as_ref()
+                    .and_then(aspect_ratio)
+                    .unwrap_or(1.0),
+            },
+            grid_opts(c, SECTION_COLUMNS, None),
+        ),
         "weather-forecast" => {
             let id = c.entity.clone().unwrap_or_default();
             let forecast_type = c.forecast_type.as_deref().and_then(|t| {
@@ -285,26 +363,12 @@ pub fn card(c: &CardConfig) -> CardNode {
                 grid_opts(c, 6, Some(2)),
             )
         }
-        _ => {
-            let mut entities: Vec<EntityRef> = c
-                .entities
-                .iter()
-                .filter_map(|e| match e {
-                    EntityRowConfig::Id(id) => Some(EntityRef::new(id)),
-                    EntityRowConfig::Row(r) => r
-                        .entity
-                        .as_deref()
-                        .map(|id| entity_ref(id, &r.name, &r.icon)),
-                })
-                .collect();
-            if let Some(id) = &c.entity {
-                entities.insert(0, entity_ref(id, &c.name, &c.icon));
-            }
-            (
-                CardKind::Unsupported { entities },
-                grid_opts(c, SECTION_COLUMNS, Some(2)),
-            )
-        }
+        _ => (
+            CardKind::Unsupported {
+                entities: card_entities(c),
+            },
+            grid_opts(c, SECTION_COLUMNS, Some(2)),
+        ),
     };
     CardNode {
         kind,
@@ -482,6 +546,36 @@ mod tests {
     }
 
     #[test]
+    fn aspect_ratios() {
+        let r = |v: serde_json::Value| aspect_ratio(&v);
+        assert_eq!(r(serde_json::json!("16:9")), Some(9.0 / 16.0));
+        assert_eq!(r(serde_json::json!("16x9")), Some(9.0 / 16.0));
+        assert_eq!(r(serde_json::json!("50%")), Some(0.5));
+        assert_eq!(r(serde_json::json!(2)), Some(0.5));
+        assert_eq!(r(serde_json::json!("nonsense")), None);
+    }
+
+    #[test]
+    fn badge_taps() {
+        let cfg = |a: &str| ActionConfig {
+            action: Some(a.into()),
+            ..Default::default()
+        };
+        assert_eq!(badge_tap("script.bed", None), Some(ActionSpec::Toggle));
+        assert_eq!(
+            badge_tap("scene.x", Some(&cfg("more-info"))),
+            Some(ActionSpec::Toggle)
+        );
+        assert_eq!(
+            badge_tap("switch.x", Some(&cfg("toggle"))),
+            Some(ActionSpec::Toggle)
+        );
+        assert_eq!(badge_tap("sensor.t", None), None);
+        assert_eq!(badge_tap("switch.x", None), None);
+        assert_eq!(badge_tap("script.bed", Some(&cfg("none"))), None);
+    }
+
+    #[test]
     fn views_and_layouts() {
         let d = dash();
         assert_eq!(d.views.len(), 4);
@@ -537,7 +631,19 @@ mod tests {
             .filter(|c| matches!(c.kind, CardKind::Unsupported { .. }))
             .map(|c| c.raw_type.as_str())
             .collect();
-        assert_eq!(unsupported, vec!["map"]);
+        assert!(unsupported.is_empty(), "{unsupported:?}");
+        match &cards[0].kind {
+            CardKind::Map {
+                entities,
+                zoom,
+                dark,
+                aspect,
+            } => {
+                assert_eq!(&*entities[0].entity_id, "person.alex");
+                assert_eq!((*zoom, *dark, *aspect), (14, true, 1.0));
+            }
+            other => panic!("expected a map card, got {other:?}"),
+        }
         let weather = cards
             .iter()
             .find(|c| c.raw_type == "weather-forecast")

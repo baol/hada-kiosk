@@ -202,7 +202,8 @@ pub fn format_state_tr(
             .map(str::to_string)
             .unwrap_or_else(|| binary_sensor_text(dc, state == "on").to_string()),
         "cover" => match st.attr_u32("current_position") {
-            Some(p) if state == "open" && p < 100 => format!("{} · {p}%", word(state)),
+            // As HA: an open cover shows its position, also at 100%.
+            Some(p) if state == "open" => format!("{} · {p}%", word(state)),
             _ => word(state),
         },
         "light" => match (state, st.attr_u32("brightness")) {
@@ -457,6 +458,8 @@ mod tests {
         assert_eq!(format_state_at("binary_sensor.c", &conn, 0.0), "Connected");
         let cov = EntityState::new("open").with_attr("current_position", json!(70));
         assert_eq!(format_state_at("cover.c", &cov, 0.0), "Open · 70%");
+        let full = EntityState::new("open").with_attr("current_position", json!(100));
+        assert_eq!(format_state_at("cover.c", &full, 0.0), "Open · 100%");
         let light = EntityState::new("on").with_attr("brightness", json!(128));
         assert_eq!(format_state_at("light.l", &light, 0.0), "50%");
         let upd = EntityState::new("on").with_attr("latest_version", json!("8.03"));

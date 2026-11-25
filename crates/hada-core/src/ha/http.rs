@@ -54,13 +54,20 @@ pub async fn post(
     let (host, port, _) = endpoint(&url)?;
     let prefix = url.path().trim_end_matches('/');
     let request = format!(
-        "POST {prefix}{path} HTTP/1.1\r\nHost: {host}:{port}\r\nUser-Agent: hada\r\nAccept: application/json\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {prefix}{path} HTTP/1.1\r\nHost: {host}:{port}\r\nUser-Agent: {USER_AGENT}\r\nAccept: application/json\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     send(&url, request.as_bytes()).await
 }
 
 /// `GET url`, following up to three redirects. For images: see [`Response::bytes`].
+/// Identifies the app, as tile servers (OpenStreetMap) ask.
+const USER_AGENT: &str = concat!(
+    "hada/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/baol/hada-kiosk)"
+);
+
 pub async fn get(url: &str) -> Result<Response, HttpError> {
     let mut url = url::Url::parse(url.trim()).map_err(|e| HttpError::Url(e.to_string()))?;
     for _ in 0..=MAX_REDIRECTS {
@@ -70,7 +77,7 @@ pub async fn get(url: &str) -> Result<Response, HttpError> {
             None => url.path().to_string(),
         };
         let request = format!(
-            "GET {target} HTTP/1.1\r\nHost: {host}:{port}\r\nUser-Agent: hada\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+            "GET {target} HTTP/1.1\r\nHost: {host}:{port}\r\nUser-Agent: {USER_AGENT}\r\nAccept: */*\r\nConnection: close\r\n\r\n"
         );
         let resp = send(&url, request.as_bytes()).await?;
         match (resp.status, &resp.location) {

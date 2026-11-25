@@ -8,10 +8,12 @@ export { Actions } from "cards/cards.slint";
 
 component Badge {
     in property <RowData> data;
+    // Card context with the badges' tap actions (see build_ui).
+    in property <int> card-id;
     height: 36px;
     Rectangle {
         border-radius: 18px;
-        background: Theme.card;
+        background: ta.pressed ? Theme.pressed : Theme.card;
         HorizontalLayout {
             padding-left: 10px;
             padding-right: 14px;
@@ -20,6 +22,10 @@ component Badge {
             if root.data.name != "": Text { text: root.data.name; color: Theme.text-dim; font-size: Theme.font-s; vertical-alignment: center; }
             Text { text: root.data.state-text; color: Theme.text; font-size: Theme.font-m; font-weight: 500; vertical-alignment: center; }
         }
+    }
+    ta := TouchArea {
+        enabled: root.data.tappable && !root.data.unavailable;
+        clicked => { Actions.action(root.data.entity-id, ActionKind.row-action, 0, root.card-id); }
     }
 }
 
@@ -130,7 +136,7 @@ component Content inherits Flickable {
         if root.view.badges.length > 0: HorizontalLayout {
             spacing: Theme.gap;
             alignment: start;
-            for b in root.view.badges: Badge { data: b; }
+            for b in root.view.badges: Badge { data: b; card-id: root.view.badge-card; }
         }
         for sr in root.view.rows: HorizontalLayout {
             spacing: Theme.pad;
@@ -164,17 +170,24 @@ export component AppWindow inherits Window {
     property <ViewData> view: root.views[root.current-view];
     // Width available to the content. Derived from the window size (not from
     // the layout), so card widths computed from it cannot form a binding loop.
-    out property <length> avail: root.portrait ? root.width : root.width - 104px;
+    // Room taken by a phone's notch, Dynamic Island or rounded corners (iOS).
+    property <length> inset-left: root.safe-area-insets.left;
+    property <length> inset-right: root.safe-area-insets.right;
+    property <length> inset-top: root.safe-area-insets.top;
+    out property <length> avail: (root.portrait ? root.width : root.width - 104px - root.inset-left)
+        - (root.portrait ? root.inset-left : 0px) - root.inset-right;
     // Later size changes (desktop windows). The initial size is read from Rust
     // after the callback is connected: `init` runs before that, inside new().
     changed avail => { root.relayout(root.avail); }
 
     if !root.portrait: HorizontalLayout {
+        padding-right: root.inset-right;
         Rectangle {
-            width: 104px;
+            width: 104px + root.inset-left;
             background: Theme.rail;
             VerticalLayout {
                 padding: 8px;
+                padding-left: 8px + root.inset-left;
                 spacing: 4px;
                 alignment: start;
                 for v[i] in root.views: RailItem {
@@ -192,11 +205,14 @@ export component AppWindow inherits Window {
         }
     }
     if root.portrait: VerticalLayout {
+        padding-left: root.inset-left;
+        padding-right: root.inset-right;
         Rectangle {
-            height: 72px;
+            height: 72px + root.inset-top;
             background: Theme.rail;
             HorizontalLayout {
                 padding: 8px;
+                padding-top: 8px + root.inset-top;
                 spacing: 4px;
                 for v[i] in root.views: RailItem {
                     view: v;

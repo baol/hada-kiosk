@@ -319,6 +319,27 @@ fn screenshot(
                 });
             }
         }
+        // Map cards: download their tiles here, as there is no network thread.
+        let requests = std::mem::take(&mut a.map_queue);
+        if !requests.is_empty() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let cache =
+                directories::ProjectDirs::from("", "", "hada").map(|d| d.cache_dir().join("tiles"));
+            for cmd in requests {
+                if let hada_core::ha::HaCommand::FetchMap {
+                    key, view, style, ..
+                } = cmd
+                {
+                    let image = rt
+                        .block_on(hada_core::map::render(&view, style, cache.as_deref()))
+                        .map_err(|e| tracing::warn!("map {key}: {e}"))
+                        .ok();
+                    a.handle(HaEvent::Map { key, view, image });
+                }
+            }
+        }
     }
     ui.set_status_text("Demo".into());
     headless::render_png(w, h, &out)?;

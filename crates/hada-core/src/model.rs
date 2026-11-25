@@ -51,6 +51,8 @@ pub struct Badge {
     pub show_name: bool,
     pub show_state: bool,
     pub show_icon: bool,
+    /// What a tap does; `None` = not tappable.
+    pub tap: Option<ActionSpec>,
 }
 
 /// Reference to an entity with optional display overrides from the config.
@@ -167,6 +169,15 @@ pub enum CardKind {
     },
     /// A card type we do not render natively (map, …).
     /// Entities are still listed so the UI can show their state.
+    Map {
+        /// People, device trackers and zones with `latitude`/`longitude`.
+        entities: Vec<EntityRef>,
+        /// Closest zoom (HA's `default_zoom`); zooms out to fit everyone.
+        zoom: u8,
+        dark: bool,
+        /// Height / width.
+        aspect: f32,
+    },
     Unsupported {
         entities: Vec<EntityRef>,
     },
@@ -301,6 +312,9 @@ impl CardNode {
                 }
             }
             CardKind::Glance { items, .. }
+            | CardKind::Map {
+                entities: items, ..
+            }
             | CardKind::Unsupported { entities: items }
             | CardKind::Calendar {
                 entities: items, ..
@@ -346,6 +360,7 @@ impl CardNode {
                 ..
             } => 2 * u32::from(*show_current) + 2 * u32::from(*show_forecast),
             CardKind::Media { .. } => 4,
+            CardKind::Map { aspect, .. } => (6.0 * aspect).round().max(2.0) as u32,
             CardKind::Unsupported { .. } => 2,
         }
     }

@@ -59,6 +59,13 @@ pub struct App {
     artwork_urls: std::collections::HashMap<Arc<str>, String>,
     /// Moves the media progress bars on while something plays.
     media_timer: slint::Timer,
+    /// Map cards by key: the view last asked for, and the image last received.
+    map_requested: std::collections::HashMap<String, hada_core::map::MapView>,
+    map_images: std::collections::HashMap<String, (hada_core::map::MapView, slint::Image)>,
+    /// Where map tiles are kept between runs.
+    tile_cache: Option<std::path::PathBuf>,
+    /// Map requests made without a network thread (served by the screenshot mode).
+    pub map_queue: Vec<HaCommand>,
 }
 
 impl App {
@@ -72,6 +79,7 @@ impl App {
         base_url: Option<String>,
     ) -> Rc<RefCell<App>> {
         let icon_cache_path = cache_dir.as_ref().map(|d| d.join("icons.json"));
+        let tile_cache = cache_dir.as_ref().map(|d| d.join("tiles"));
         let translations_cache_path = cache_dir
             .as_ref()
             .map(|d| d.join(format!("translations-{language}.json")));
@@ -111,6 +119,10 @@ impl App {
             artworks: std::collections::HashMap::new(),
             artwork_urls: std::collections::HashMap::new(),
             media_timer: slint::Timer::default(),
+            map_requested: std::collections::HashMap::new(),
+            map_images: std::collections::HashMap::new(),
+            tile_cache,
+            map_queue: Vec::new(),
         }));
         APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
@@ -222,6 +234,25 @@ impl App {
                     }
                 }
             }
+            HaEvent::Map { key, view, image } => {
+                if self.map_requested.get(&key) == Some(&view) {
+                    match image {
+                        Some(a) => {
+                            let buf =
+                                slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+                                    &a.rgba, a.width, a.height,
+                                );
+                            self.map_images
+                                .insert(key.clone(), (view, slint::Image::from_rgba8(buf)));
+                            self.update_map(&key);
+                        }
+                        // Ask again on the next position update.
+                        None => {
+                            self.map_requested.remove(&key);
+                        }
+                    }
+                }
+            }
             HaEvent::Forecast {
                 entity_id,
                 forecast_type,
@@ -313,6 +344,14 @@ impl App {
         let views: Vec<crate::ViewData> = built.views.iter().map(|v| v.data.clone()).collect();
         self.views_model.set_vec(views);
         self.built = Some(built);
+        let keys: Vec<String> = self
+            .built
+            .as_ref()
+            .map(|b| b.maps.iter().map(|m| m.key.clone()).collect())
+            .unwrap_or_default();
+        for key in keys {
+            self.update_map(&key);
+        }
         // A rebuilt calendar card starts empty; refill it from the last fetch.
         for (entity_id, events) in self.calendar_events.clone() {
             self.handle(HaEvent::Calendar { entity_id, events });
@@ -450,8 +489,10 @@ impl App {
             return;
         };
         let st = self.store.get(id);
+        let mut maps = Vec::new();
         for r in refs {
             match r {
+                RowRef::Map { key } => maps.push(key.clone()),
                 RowRef::Row { model, index, spec } => {
                     if let Some(mut row) = model.row_data(*index) {
                         let keep_id = row.entity_id.clone();
@@ -513,6 +554,131 @@ impl App {
                 }),
             }
         }
+        for key in maps {
+            self.update_map(&key);
+        }
+    }
+
+    /// Fit the map card `key` around its entities: ask for a new image when the
+    /// view changed, and place the markers on the image shown now.
+    fn update_map(&mut self, key: &str) {
+        use hada_core::map::{self, TILE};
+        let Some(card) = self
+            .built
+            .as_ref()
+            .and_then(|b| b.maps.iter().find(|m| m.key == key))
+            .cloned()
+        else {
+            return;
+        };
+        let base = self.base_url.clone().unwrap_or_default();
+        struct Spot {
+            id: Arc<str>,
+            lat: f64,
+            lon: f64,
+            initials: String,
+            /// Zones: radius in metres.
+            radius: Option<f64>,
+        }
+        let mut spots = Vec::new();
+        let mut pictures = Vec::new();
+        for e in &card.entities {
+            let Some(st) = self.store.get(&e.entity_id) else {
+                continue;
+            };
+            let (Some(lat), Some(lon)) = (st.attr_f64("latitude"), st.attr_f64("longitude")) else {
+                continue;
+            };
+            let zone = e.entity_id.starts_with("zone.");
+            if !zone {
+                if let Some(url) = hada_core::media::artwork_url(&base, st) {
+                    pictures.push((e.entity_id.clone(), url));
+                }
+            }
+            spots.push(Spot {
+                id: e.entity_id.clone(),
+                lat,
+                lon,
+                initials: initials(&build_ui::display_name(e, Some(st))),
+                radius: if zone {
+                    Some(st.attr_f64("radius").unwrap_or(100.0))
+                } else {
+                    None
+                },
+            });
+        }
+        for (id, url) in pictures {
+            self.request_picture(&id, url);
+        }
+        let points: Vec<(f64, f64)> = spots.iter().map(|s| (s.lat, s.lon)).collect();
+        if let Some(view) = map::fit(&points, card.zoom, card.width, card.height) {
+            if self.map_requested.get(key) != Some(&view) {
+                self.map_requested.insert(key.to_string(), view);
+                let cmd = HaCommand::FetchMap {
+                    key: key.to_string(),
+                    view,
+                    style: card.style,
+                    cache: self.tile_cache.clone(),
+                };
+                match &self.cmd_tx {
+                    Some(tx) => {
+                        tracing::info!("fetching map {key} at zoom {}", view.zoom);
+                        let _ = tx.send(cmd);
+                    }
+                    None => self.map_queue.push(cmd),
+                }
+            }
+        }
+        let shown = self.map_images.get(key).cloned();
+        let markers: Vec<crate::MapMarker> = match &shown {
+            Some((v, _)) => spots
+                .iter()
+                .filter_map(|s| {
+                    let (x, y) = v.project(s.lat, s.lon);
+                    if !(-0.1..=1.1).contains(&x) || !(-0.1..=1.1).contains(&y) {
+                        return None;
+                    }
+                    // Metres per image pixel at this latitude and zoom.
+                    let mpp = 40_075_016.686 * s.lat.to_radians().cos()
+                        / (TILE * f64::from(1u32 << v.zoom));
+                    let radius = s.radius.map_or(0.0, |r| r / mpp / f64::from(v.width));
+                    let picture = self.artworks.get(&s.id).cloned();
+                    Some(crate::MapMarker {
+                        initials: s.initials.as_str().into(),
+                        has_picture: picture.is_some(),
+                        picture: picture.unwrap_or_default(),
+                        x: x as f32,
+                        y: y as f32,
+                        radius: radius as f32,
+                    })
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        card.slot.update(|leaf| {
+            match &shown {
+                Some((_, img)) => {
+                    leaf.artwork = img.clone();
+                    leaf.has_artwork = true;
+                }
+                None => leaf.has_artwork = false,
+            }
+            leaf.markers = slint::ModelRc::new(slint::VecModel::from(markers));
+        });
+    }
+
+    /// Fetch a person's picture for the map markers (once per URL).
+    fn request_picture(&mut self, id: &Arc<str>, url: String) {
+        if self.artwork_urls.get(id) == Some(&url) {
+            return;
+        }
+        self.artwork_urls.insert(id.clone(), url.clone());
+        if let Some(tx) = &self.cmd_tx {
+            let _ = tx.send(HaCommand::FetchArtwork {
+                entity_id: id.to_string(),
+                url,
+            });
+        }
     }
 
     fn mark_pending(&mut self, id: &Arc<str>) {
@@ -534,7 +700,10 @@ impl App {
                         model.set_row_data(*index, f);
                     }
                 }
-                RowRef::Header { .. } | RowRef::Weather { .. } | RowRef::Media { .. } => {}
+                RowRef::Header { .. }
+                | RowRef::Weather { .. }
+                | RowRef::Media { .. }
+                | RowRef::Map { .. } => {}
             }
         }
         // Clear the pending marker if no state change arrives in time.
@@ -667,4 +836,13 @@ impl App {
             None => tracing::warn!("no service for {:?} on {entity_id}", ea.action),
         }
     }
+}
+
+/// "Ada Lovelace" → "AL", as HA's map markers without a picture.
+fn initials(name: &str) -> String {
+    name.split_whitespace()
+        .filter_map(|w| w.chars().next())
+        .take(2)
+        .flat_map(char::to_uppercase)
+        .collect()
 }

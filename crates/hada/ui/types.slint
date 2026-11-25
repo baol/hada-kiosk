@@ -38,6 +38,7 @@ export struct RowData {
     action-name: string,
     grid-row: int,
     grid-col: int,
+    tappable: bool,         // badge: a tap runs its action
 }
 
 export struct FeatureData {
@@ -55,8 +56,18 @@ export struct FeatureData {
     available: bool,
 }
 
+// A person (or tracker) on a map card, or a zone (radius > 0).
+export struct MapMarker {
+    initials: string,
+    picture: image,
+    has-picture: bool,
+    x: float,               // position as a fraction of the map's width
+    y: float,               // and height
+    radius: float,          // zone: radius as a fraction of the map's width; 0 otherwise
+}
+
 // kind: 0 tile, 1 entities, 2 glance, 3 sensor, 4 gauge, 6 markdown, 7 button, 8 placeholder,
-// 9 calendar, 10 weather, 11 media (rows[0].entity-id = the player)
+// 9 calendar, 10 weather, 11 media (rows[0].entity-id = the player), 12 map (artwork = the map)
 export struct LeafCard {
     kind: int,
     raw-type: string,
@@ -83,7 +94,10 @@ export struct LeafCard {
     card-id: int,
     header-toggle: int,     // -1 none, 0 off, 1 on
     tap-toggles: bool,
+    markers: [MapMarker],   // map
+    aspect: float,          // map: height / width
     hide-state: bool,
+    vertical: bool,         // tile: icon, name and state stacked and centred
     state-color: bool,
     show-name: bool,
     show-icon: bool,
@@ -133,5 +147,6 @@ export struct ViewData {
     is-sections: bool,
     max-columns: int,
     badges: [RowData],
+    badge-card: int,        // card context holding the badges' tap actions
     rows: [SectionRow],
 }
