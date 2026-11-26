@@ -108,4 +108,4 @@ cargo run --release -- --url http://homeassistant.local:8123 --token-file ha-tok
 
 ## License
 
-GPL-3.0-only. hada uses the [Slint](https://slint.dev) toolkit under its GPL-3.0 licence; see [LICENSE-NOTICES.md](LICENSE-NOTICES.md).
+hada's code is licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. The Linux packages and the Android app use the [Slint](https://slint.dev) toolkit under its GPL-3.0 licence, so those builds are GPL-3.0; see [LICENSE-NOTICES.md](LICENSE-NOTICES.md). Releases up to v0.5.0 were GPL-3.0-only.
