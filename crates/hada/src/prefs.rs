@@ -143,6 +143,8 @@ pub fn session_config(
         source: DashboardSource::Remote {
             url_path: dashboard,
         },
+        cached: None,
+        dashboard_cache: None,
     };
     (cfg, view)
 }

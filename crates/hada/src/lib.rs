@@ -54,10 +54,24 @@ impl Session {
 /// Calling it again (new settings) replaces the previous session.
 pub fn start_session(
     ui: &AppWindow,
-    cfg: HaConfig,
+    mut cfg: HaConfig,
     view: Option<String>,
     cache: Option<PathBuf>,
 ) -> anyhow::Result<Session> {
+    // The last dashboard from Home Assistant, shown before it answers (remote only).
+    if let (DashboardSource::Remote { url_path }, Some(dir)) = (&cfg.source, &cache) {
+        let path = dir.join("dashboard.bin");
+        let key = hada_core::dashboard_cache::cache_key(&cfg.base_url, url_path.as_deref());
+        let started = std::time::Instant::now();
+        cfg.cached = hada_core::dashboard_cache::load(&path, &key);
+        if cfg.cached.is_some() {
+            tracing::info!(
+                "dashboard loaded from cache in {:.1} ms",
+                started.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+        cfg.dashboard_cache = Some(path);
+    }
     let generation = SESSION.fetch_add(1, Ordering::SeqCst) + 1;
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HaCommand>();
     let app = app::App::install(
@@ -68,9 +82,11 @@ pub fn start_session(
         &cfg.language,
         Some(cfg.base_url.clone()),
     );
-    // A local dashboard is shown right away, even before Home Assistant answers.
+    // A local or cached dashboard is shown right away, even before Home Assistant answers.
     if let DashboardSource::Local(d) = &cfg.source {
         app.borrow_mut().set_dashboard(d.clone());
+    } else if let Some(c) = &cfg.cached {
+        app.borrow_mut().set_dashboard(c.dashboard.clone());
     }
     // Network thread: tokio runtime driving the websocket session; events hop to the UI thread.
     std::thread::Builder::new()

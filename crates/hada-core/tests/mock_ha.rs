@@ -1,7 +1,7 @@
 //! Integration test: a mock Home Assistant websocket server speaking the real
 //! protocol (auth handshake, `lovelace/config`, `frontend/get_icons`,
 //! `subscribe_entities` with the compressed state format, `call_service`,
-//! `weather/subscribe_forecast`).
+//! `weather/subscribe_forecast`, `subscribe_events`).
 
 use futures_util::{SinkExt, StreamExt};
 use hada_core::actions::{Action, EntityAction};
@@ -149,6 +149,14 @@ async fn mock_server(listener: TcpListener, token: &'static str) -> Vec<Value> {
                     ]}})).await;
                 }
             }
+            "subscribe_events" => {
+                assert_eq!(m["event_type"], "lovelace_updated");
+                send(
+                    &mut ws,
+                    json!({"id": id, "type": "result", "success": true, "result": null}),
+                )
+                .await;
+            }
             "ping" => send(&mut ws, json!({"id": id, "type": "pong"})).await,
             other => panic!("unexpected command {other}"),
         }
@@ -185,6 +193,8 @@ async fn full_session_against_mock_ha() {
         auth_store: None,
         language: "it".into(),
         source: DashboardSource::Remote { url_path: None },
+        cached: None,
+        dashboard_cache: None,
     };
     let client = tokio::spawn(run(cfg, cmd_rx, move |e| {
         let _ = ev_tx.send(e);
@@ -355,6 +365,8 @@ async fn invalid_token_is_reported() {
         auth_store: None,
         language: "it".into(),
         source: DashboardSource::Remote { url_path: None },
+        cached: None,
+        dashboard_cache: None,
     };
     let client = tokio::spawn(run(cfg, cmd_rx, move |e| {
         let _ = ev_tx.send(e);
@@ -383,6 +395,8 @@ async fn unreachable_server_reports_disconnect_with_backoff() {
         auth_store: None,
         language: "it".into(),
         source: DashboardSource::Remote { url_path: None },
+        cached: None,
+        dashboard_cache: None,
     };
     let client = tokio::spawn(run(cfg, cmd_rx, move |e| {
         let _ = ev_tx.send(e);
