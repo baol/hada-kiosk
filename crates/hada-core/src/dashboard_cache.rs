@@ -153,6 +153,25 @@ mod tests {
             grid,
             raw_type: "button".into(),
         });
+        cards.push(CardNode {
+            kind: CardKind::Map {
+                entities: vec![EntityRef::new("person.ada"), EntityRef::new("zone.home")],
+                zoom: 14,
+                dark: true,
+                aspect: 0.5625,
+            },
+            title: Some("Where".into()),
+            grid,
+            raw_type: "map".into(),
+        });
+        cards.push(CardNode {
+            kind: CardKind::Unsupported {
+                entities: vec![EntityRef::new("sensor.power")],
+            },
+            title: None,
+            grid,
+            raw_type: "custom:apexcharts-card".into(),
+        });
         d
     }
 
@@ -172,6 +191,7 @@ mod tests {
             "Calendar",
             "Weather",
             "Media",
+            "Map",
             "Unsupported",
         ] {
             assert!(

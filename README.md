@@ -8,7 +8,7 @@
 |---|---|
 | <img src="docs/screenshots/portrait-kiosk.png" width="300"> | <img src="docs/screenshots/landscape-home.png" width="512"> |
 
-Tiles, entities, glance, sensor, gauge, grid, markdown, button, calendar, weather forecast and media control cards (with album art and volume), masonry and sections views, and badges are drawn natively. Other cards appear as placeholders listing their entities' state. The dashboard is cached on the device, so it shows at once on start, and edits saved in Home Assistant appear without a restart.
+Tiles, entities, glance, sensor, gauge, grid, markdown, button, calendar, weather forecast, media control (with album art and volume) and map cards, masonry and sections views, and badges are drawn natively. Other cards appear as placeholders listing their entities' state. The dashboard is cached on the device, so it shows at once on start, and edits saved in Home Assistant appear without a restart.
 
 ## 1. Get a token
 
@@ -104,8 +104,8 @@ sudo apt install libfontconfig-dev libinput-dev libudev-dev libxkbcommon-dev lib
 cargo run --release -- --url http://homeassistant.local:8123 --token-file ha-token
 ```
 
-`cargo test --workspace --features screenshot` runs the tests; `scripts/screenshots.sh` renders the demo dashboard without a display; `scripts/build-apk.sh` builds the Android app (needs the Android SDK and a JDK 17+, no Gradle). Issues and pull requests are welcome.
+`cargo test --workspace --features screenshot` runs the tests; `scripts/screenshots.sh` renders the demo dashboard without a display; `scripts/build-apk.sh` builds the Android app (needs the Android SDK and a JDK 17+, no Gradle). `cargo run -p hada-ios --target aarch64-apple-ios` builds, signs and starts the iOS app on a connected iPhone (needs Xcode and a provisioning profile for `io.github.baol.hada`; `--target aarch64-apple-ios-sim` for the simulator). Issues and pull requests are welcome.
 
 ## License
 
-hada's code is licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. The Linux packages and the Android app use the [Slint](https://slint.dev) toolkit under its GPL-3.0 licence, so those builds are GPL-3.0; see [LICENSE-NOTICES.md](LICENSE-NOTICES.md). Releases up to v0.5.0 were GPL-3.0-only.
+hada's code is licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. The Linux packages and the Android and iOS apps use the [Slint](https://slint.dev) toolkit under its GPL-3.0 licence, so those builds are GPL-3.0; see [LICENSE-NOTICES.md](LICENSE-NOTICES.md). Releases up to v0.5.0 were GPL-3.0-only.
