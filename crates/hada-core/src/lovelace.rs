@@ -6,7 +6,7 @@
 //! keys live in one flat [`CardConfig`] struct and are interpreted by
 //! [`crate::normalise`] based on `type`.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fmt;
 
@@ -172,7 +172,7 @@ pub enum GridSize {
     Word(String),
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Severity {
     pub green: f64,
@@ -180,7 +180,7 @@ pub struct Severity {
     pub red: f64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Segment {
     pub from: f64,

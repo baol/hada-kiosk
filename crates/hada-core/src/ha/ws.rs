@@ -8,6 +8,7 @@
 
 use crate::actions::ServiceCall;
 use crate::artwork::{self, Artwork};
+use crate::dashboard_cache::{self, cache_key, source_hash, Stored};
 use crate::ha::auth::{Auth, AuthState};
 use crate::ha::messages::{auth_message, command, Incoming, WsError};
 use crate::icons::IconResources;
@@ -19,6 +20,7 @@ use crate::translations::Translations;
 use crate::weather::{parse_forecast, ForecastItem, ForecastType};
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
+use serde_json::value::RawValue;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -46,6 +48,18 @@ pub struct HaConfig {
     /// Language for `frontend/get_translations`, e.g. `it`.
     pub language: String,
     pub source: DashboardSource,
+    /// The dashboard from the on-disk cache, already shown by the UI (remote only).
+    pub cached: Option<Stored>,
+    /// Where to keep the dashboard cache (remote only).
+    pub dashboard_cache: Option<std::path::PathBuf>,
+}
+
+/// The dashboard this app shows, kept across reconnects, and the hash of the config
+/// text it was made from (see [`dashboard_cache::source_hash`]).
+#[derive(Default)]
+struct DashState {
+    current: Option<Dashboard>,
+    hash: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -242,7 +256,11 @@ impl Conn {
     }
 
     /// Send a command and wait for its `result`. Events seen meanwhile are kept.
-    async fn request(&mut self, kind: &str, fields: Value) -> Result<Value, SessionError> {
+    async fn request(
+        &mut self,
+        kind: &str,
+        fields: Value,
+    ) -> Result<Option<Box<RawValue>>, SessionError> {
         let id = self.send(kind, fields).await?;
         let fut = async {
             loop {
@@ -250,7 +268,7 @@ impl Conn {
                 match msg.kind.as_str() {
                     "result" if msg.id == Some(id) => {
                         return if msg.success.unwrap_or(false) {
-                            Ok(msg.result.unwrap_or(Value::Null))
+                            Ok(msg.result)
                         } else {
                             Err(SessionError::Server(msg.error.unwrap_or(WsError {
                                 code: "unknown_error".into(),
@@ -277,10 +295,17 @@ where
     let mut backoff = MIN_BACKOFF;
     let mut attempt: u32 = 0;
     let mut auth = AuthState::new(cfg.auth.clone(), &cfg.base_url, cfg.auth_store.clone());
+    let mut dash = match &cfg.cached {
+        Some(c) => DashState {
+            current: Some(c.dashboard.clone()),
+            hash: Some(c.source_hash),
+        },
+        None => DashState::default(),
+    };
     loop {
         attempt += 1;
         emit(HaEvent::Connecting { attempt });
-        let outcome = session(&cfg, &mut auth, &mut cmds, &emit).await;
+        let outcome = session(&cfg, &mut auth, &mut cmds, &emit, &mut dash).await;
         let wait = match outcome {
             Ok(SessionEnd::Shutdown) => return,
             Ok(SessionEnd::Reconnect) => {
@@ -335,6 +360,7 @@ async fn session<F>(
     auth: &mut AuthState,
     cmds: &mut mpsc::UnboundedReceiver<HaCommand>,
     emit: &F,
+    dash: &mut DashState,
 ) -> Result<SessionEnd, SessionError>
 where
     F: Fn(HaEvent),
@@ -396,17 +422,25 @@ where
     emit(HaEvent::Connected { ha_version });
 
     // --- dashboard --------------------------------------------------------
+    // On every connect: is the cached / shown dashboard still current?
     let dashboard = match &cfg.source {
-        DashboardSource::Local(d) => d.clone(),
+        DashboardSource::Local(d) => {
+            emit(HaEvent::Dashboard(d.clone()));
+            d.clone()
+        }
         DashboardSource::Remote { url_path } => {
-            let mut fields = json!({ "force": false });
-            if let Some(p) = url_path {
-                fields["url_path"] = json!(p);
-            }
-            let raw = conn.request("lovelace/config", fields).await?;
-            let cfg = LovelaceConfig::from_json_value(raw)
-                .map_err(|e| SessionError::Dashboard(e.to_string()))?;
-            normalise::normalise(&cfg)
+            let raw = conn
+                .request("lovelace/config", lovelace_fields(url_path))
+                .await?;
+            update_dashboard(
+                cfg,
+                dash,
+                raw.as_deref().map_or("null", RawValue::get),
+                emit,
+            )?;
+            dash.current
+                .clone()
+                .ok_or_else(|| SessionError::Dashboard("no dashboard".into()))?
         }
     };
     let ids: Vec<String> = dashboard
@@ -424,7 +458,6 @@ where
         .iter()
         .map(|(k, v)| (k.to_string(), *v))
         .collect();
-    emit(HaEvent::Dashboard(dashboard));
 
     // --- icons (best effort) ---------------------------------------------
     match conn
@@ -434,7 +467,7 @@ where
         )
         .await
     {
-        Ok(v) => match serde_json::from_value::<IconResources>(v) {
+        Ok(v) => match decode::<IconResources>(v.as_deref()) {
             Ok(r) => emit(HaEvent::Icons(r)),
             Err(e) => tracing::warn!("cannot parse icon resources: {e}"),
         },
@@ -449,7 +482,7 @@ where
         )
         .await
     {
-        Ok(v) => match serde_json::from_value::<Translations>(v) {
+        Ok(v) => match decode::<Translations>(v.as_deref()) {
             Ok(t) => emit(HaEvent::Translations(t)),
             Err(e) => tracing::warn!("cannot parse translations: {e}"),
         },
@@ -463,6 +496,18 @@ where
     for ev in std::mem::take(&mut conn.stray_events) {
         handle_event(&ev, sub_id, emit);
     }
+    // Dashboard edits in Home Assistant (allowed for non-admin users too).
+    let lovelace_sub = match &cfg.source {
+        DashboardSource::Remote { .. } => Some(
+            conn.send(
+                "subscribe_events",
+                json!({ "event_type": "lovelace_updated" }),
+            )
+            .await?,
+        ),
+        DashboardSource::Local(_) => None,
+    };
+    let mut pending_dashboard: Option<u64> = None;
 
     // --- main loop ----------------------------------------------------------
     let mut ping = interval(PING_INTERVAL);
@@ -498,12 +543,34 @@ where
                         });
                         match forecast {
                             Some((entity_id, forecast_type)) => handle_forecast_event(&msg, entity_id, forecast_type, emit),
+                            None if msg.id.is_some() && msg.id == lovelace_sub => {
+                                if let DashboardSource::Remote { url_path } = &cfg.source {
+                                    if is_our_dashboard(&msg, url_path.as_deref()) && pending_dashboard.is_none() {
+                                        tracing::info!("dashboard edited in Home Assistant: checking");
+                                        pending_dashboard = Some(conn.send("lovelace/config", lovelace_fields(url_path)).await?);
+                                    }
+                                }
+                            }
                             None => handle_event(&msg, sub_id, emit),
                         }
                     }
                     "pong" => awaiting_pong = None,
                     "result" => {
-                        if let Some((entity_id, tried, mut rest)) = msg.id.and_then(|id| forecast_pending.remove(&id)) {
+                        if msg.id.is_some() && msg.id == pending_dashboard {
+                            pending_dashboard = None;
+                            if msg.success.unwrap_or(false) {
+                                let text = msg.result.as_deref().map_or("null", RawValue::get);
+                                if update_dashboard(cfg, dash, text, emit)? {
+                                    // New entities, calendars or forecasts: subscribe afresh.
+                                    let _ = conn.tx.send(Message::Close(None)).await;
+                                    return Ok(SessionEnd::Reconnect);
+                                }
+                            } else {
+                                tracing::warn!("reloading the dashboard failed: {:?}", msg.error);
+                            }
+                        } else if msg.id.is_some() && msg.id == lovelace_sub && !msg.success.unwrap_or(false) {
+                            tracing::warn!("cannot follow dashboard edits: {:?}", msg.error);
+                        } else if let Some((entity_id, tried, mut rest)) = msg.id.and_then(|id| forecast_pending.remove(&id)) {
                             if msg.success.unwrap_or(false) {
                                 tracing::info!("{entity_id}: {} forecast subscribed", tried.as_str());
                                 forecast_subs.insert(msg.id.unwrap_or_default(), (entity_id, tried));
@@ -609,6 +676,70 @@ fn handle_forecast_event<F: Fn(HaEvent)>(
     });
 }
 
+/// Decode a command result straight from its JSON text.
+fn decode<T: serde::de::DeserializeOwned>(raw: Option<&RawValue>) -> serde_json::Result<T> {
+    serde_json::from_str(raw.map_or("null", RawValue::get))
+}
+
+fn lovelace_fields(url_path: &Option<String>) -> Value {
+    let mut fields = json!({ "force": false });
+    if let Some(p) = url_path {
+        fields["url_path"] = json!(p);
+    }
+    fields
+}
+
+/// `lovelace_updated` carries `{"url_path": ...}`; null is the default dashboard.
+fn is_our_dashboard(msg: &Incoming, url_path: Option<&str>) -> bool {
+    let edited = msg
+        .event
+        .as_ref()
+        .and_then(|e| e.get("data"))
+        .and_then(|d| d.get("url_path"))
+        .and_then(Value::as_str);
+    edited == url_path
+}
+
+/// The dashboard config as received. Unchanged text (same hash) costs nothing;
+/// changed text is parsed, normalised, shown and cached. Returns whether it changed.
+fn update_dashboard<F: Fn(HaEvent)>(
+    cfg: &HaConfig,
+    dash: &mut DashState,
+    text: &str,
+    emit: &F,
+) -> Result<bool, SessionError> {
+    let hash = source_hash(text);
+    if dash.current.is_some() && dash.hash == Some(hash) {
+        tracing::info!("dashboard unchanged");
+        return Ok(false);
+    }
+    let started = std::time::Instant::now();
+    let lovelace: LovelaceConfig =
+        serde_json::from_str(text).map_err(|e| SessionError::Dashboard(e.to_string()))?;
+    let dashboard = normalise::normalise(&lovelace);
+    tracing::info!(
+        "dashboard parsed and normalised in {:.1} ms ({} bytes of JSON)",
+        started.elapsed().as_secs_f64() * 1000.0,
+        text.len()
+    );
+    if let (Some(path), DashboardSource::Remote { url_path }) = (&cfg.dashboard_cache, &cfg.source)
+    {
+        let stored = Stored {
+            key: cache_key(&cfg.base_url, url_path.as_deref()),
+            source_hash: hash,
+            dashboard: dashboard.clone(),
+        };
+        match dashboard_cache::save(path, &stored) {
+            Ok(()) => tracing::info!("dashboard cached in {}", path.display()),
+            Err(e) => tracing::warn!("cannot cache the dashboard in {}: {e}", path.display()),
+        }
+    }
+    dash.current = Some(dashboard.clone());
+    dash.hash = Some(hash);
+    emit(HaEvent::Dashboard(dashboard));
+    Ok(true)
+}
+
 fn handle_calendar_result<F: Fn(HaEvent)>(entity_id: String, msg: &Incoming, emit: &F) {
     if !msg.success.unwrap_or(false) {
         tracing::warn!(
@@ -618,16 +749,23 @@ fn handle_calendar_result<F: Fn(HaEvent)>(entity_id: String, msg: &Incoming, emi
         return;
     }
     // {"response": {"calendar.x": {"events": [...]}}}
-    let events = msg
-        .result
-        .as_ref()
-        .and_then(|r| r.get("response"))
-        .and_then(|r| r.get(&entity_id))
-        .and_then(|r| r.get("events"))
-        .cloned()
-        .unwrap_or(Value::Array(Vec::new()));
-    match serde_json::from_value::<Vec<CalendarEvent>>(events) {
-        Ok(mut events) => {
+    #[derive(serde::Deserialize)]
+    struct Response {
+        #[serde(default)]
+        response: HashMap<String, Events>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Events {
+        #[serde(default)]
+        events: Vec<CalendarEvent>,
+    }
+    match decode::<Response>(msg.result.as_deref()) {
+        Ok(mut r) => {
+            let mut events = r
+                .response
+                .remove(&entity_id)
+                .map(|e| e.events)
+                .unwrap_or_default();
             events.sort_by(|a, b| a.start.cmp(&b.start));
             emit(HaEvent::Calendar { entity_id, events });
         }
@@ -649,6 +787,31 @@ fn handle_event<F: Fn(HaEvent)>(msg: &Incoming, sub_id: u64, emit: &F) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lovelace_updated_matches_our_dashboard_only() {
+        let ev = |data: &str| -> Incoming {
+            serde_json::from_str(&format!(
+                r#"{{"id":5,"type":"event","event":{{"event_type":"lovelace_updated","data":{data}}}}}"#
+            ))
+            .unwrap()
+        };
+        // null is the default dashboard.
+        assert!(is_our_dashboard(&ev(r#"{"url_path":null}"#), None));
+        assert!(!is_our_dashboard(
+            &ev(r#"{"url_path":null}"#),
+            Some("kiosk")
+        ));
+        assert!(is_our_dashboard(
+            &ev(r#"{"url_path":"kiosk"}"#),
+            Some("kiosk")
+        ));
+        assert!(!is_our_dashboard(&ev(r#"{"url_path":"kiosk"}"#), None));
+        assert!(!is_our_dashboard(
+            &ev(r#"{"url_path":"other"}"#),
+            Some("kiosk")
+        ));
+    }
 
     #[test]
     fn url_mapping() {

@@ -8,7 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 serde_yaml_ng.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
@@ -21,6 +21,8 @@ rustls-pki-types = "1"
 webpki-roots = "1"
 # Local UTC offset for forecast labels (already in the tree through Slint).
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Binary dashboard cache: serde, compact, documented stable wire format.
+postcard = { version = "1", default-features = false, features = ["use-std"] }
 # Album art (JPEG/PNG/WebP), already in the tree through Slint.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 

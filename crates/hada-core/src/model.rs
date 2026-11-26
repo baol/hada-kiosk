@@ -7,16 +7,17 @@
 
 use crate::lovelace::{Segment, Severity};
 pub use crate::weather::{ForecastType, WeatherDisplay};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Dashboard {
     pub title: Option<String>,
     pub views: Vec<View>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct View {
     pub title: String,
     pub path: String,
@@ -26,7 +27,7 @@ pub struct View {
     pub layout: Layout,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Layout {
     /// Classic masonry view: cards flow into N columns.
     Masonry(Vec<CardNode>),
@@ -37,14 +38,14 @@ pub enum Layout {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Section {
     pub title: Option<String>,
     pub column_span: u32,
     pub cards: Vec<CardNode>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Badge {
     pub entity: EntityRef,
     pub show_name: bool,
@@ -53,7 +54,7 @@ pub struct Badge {
 }
 
 /// Reference to an entity with optional display overrides from the config.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntityRef {
     pub entity_id: Arc<str>,
     pub name: Option<String>,
@@ -74,7 +75,7 @@ impl EntityRef {
 }
 
 /// Concrete grid placement inside a sections-view grid (12 columns wide).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GridOpts {
     /// 1..=12 columns.
     pub columns: u32,
@@ -85,7 +86,7 @@ pub struct GridOpts {
     pub auto_columns: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CardNode {
     pub kind: CardKind,
     pub title: Option<String>,
@@ -94,7 +95,7 @@ pub struct CardNode {
     pub raw_type: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CardKind {
     Tile {
         entity: EntityRef,
@@ -171,13 +172,13 @@ pub enum CardKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MarkdownLine {
     pub text: String,
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Row {
     Entity {
         entity: EntityRef,
@@ -209,7 +210,7 @@ pub enum Row {
     Buttons(Vec<EntityRef>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Feature {
     Toggle,
     CoverOpenClose,
@@ -226,14 +227,16 @@ pub enum Feature {
 }
 
 /// A resolved `tap_action`-style action.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ActionSpec {
     MoreInfo,
     Toggle,
     PerformAction {
         domain: String,
         service: String,
+        #[serde(with = "json_text")]
         data: serde_json::Value,
+        #[serde(with = "json_text")]
         target: serde_json::Value,
     },
     Navigate(String),
@@ -412,5 +415,20 @@ impl Dashboard {
             }
         }
         out
+    }
+}
+
+/// Free-form JSON (action data) is kept as JSON text in the binary dashboard cache,
+/// which cannot hold self-describing values.
+mod json_text {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &serde_json::Value, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&v.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<serde_json::Value, D::Error> {
+        let text = <std::borrow::Cow<'de, str>>::deserialize(d)?;
+        serde_json::from_str(&text).map_err(serde::de::Error::custom)
     }
 }

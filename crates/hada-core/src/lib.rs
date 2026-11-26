@@ -5,6 +5,7 @@
 
 pub mod actions;
 pub mod artwork;
+pub mod dashboard_cache;
 pub mod domain;
 pub mod ha;
 pub mod icons;

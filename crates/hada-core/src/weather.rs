@@ -6,10 +6,10 @@
 
 use crate::state::EntityState;
 use crate::translations::Translations;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// `forecast_type` of `weather/subscribe_forecast`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ForecastType {
     Daily,
     Hourly,
@@ -84,7 +84,7 @@ pub fn parse_forecast(v: &serde_json::Value) -> Vec<ForecastItem> {
 }
 
 /// How a weather card shows the current conditions.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WeatherDisplay {
     /// `secondary_info_attribute`: attribute shown under the temperature.
     pub secondary_attribute: Option<String>,

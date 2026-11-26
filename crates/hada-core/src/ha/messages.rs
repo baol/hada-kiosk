@@ -2,6 +2,7 @@
 //! (`homeassistant/components/websocket_api/{auth,messages}.py`).
 
 use serde::Deserialize;
+use serde_json::value::RawValue;
 use serde_json::{json, Map, Value};
 
 /// Any message from the server. `type` decides which fields are present.
@@ -11,7 +12,8 @@ pub struct Incoming {
     #[serde(rename = "type")]
     pub kind: String,
     pub success: Option<bool>,
-    pub result: Option<Value>,
+    /// Kept as unparsed JSON text: each caller decodes it straight into its own type.
+    pub result: Option<Box<RawValue>>,
     pub error: Option<WsError>,
     pub event: Option<Value>,
     /// `auth_invalid` reason.

@@ -217,6 +217,8 @@ fn main() -> anyhow::Result<()> {
         auth_store: cache.as_ref().map(|d| d.join("auth.json")),
         language,
         source,
+        cached: None,
+        dashboard_cache: None,
     };
     let session = hada::start_session(&ui, cfg, view, cache)?;
     ui.run()?;
