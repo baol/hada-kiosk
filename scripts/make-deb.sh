@@ -7,7 +7,25 @@ ROOT="$(mktemp -d)"
 chmod 755 "$ROOT"
 trap 'rm -rf "$ROOT"' EXIT
 install -D -m 755 "$BIN" "$ROOT/usr/bin/hada"
-install -D -m 644 "$(dirname "$0")/../LICENSE" "$ROOT/usr/share/doc/hada/copyright"
+# The binary contains Slint under GPL-3.0, so the package is GPL-3.0 as a whole;
+# hada's own code is MIT OR Apache-2.0. All three texts go into the copyright file.
+TOP="$(dirname "$0")/.."
+install -d "$ROOT/usr/share/doc/hada"
+{
+  echo "hada: https://github.com/baol/hada-kiosk"
+  echo
+  echo "This package is distributed under GPL-3.0-only: it contains the Slint UI"
+  echo "toolkit under that licence. hada's own code is licensed under MIT OR"
+  echo "Apache-2.0, at your option. See LICENSE-NOTICES.md in the source repository."
+  echo
+  for f in LICENSES/GPL-3.0-only.txt LICENSE-MIT LICENSE-APACHE; do
+    echo "===== $f"
+    echo
+    cat "$TOP/$f"
+    echo
+  done
+} > "$ROOT/usr/share/doc/hada/copyright"
+chmod 644 "$ROOT/usr/share/doc/hada/copyright"
 install -D -m 755 "$(dirname "$0")/../deploy/install-kiosk.sh" "$ROOT/usr/share/hada/install-kiosk.sh"
 mkdir -p "$ROOT/DEBIAN"
 cat > "$ROOT/DEBIAN/control" <<CONTROL
