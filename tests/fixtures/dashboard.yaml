@@ -206,6 +206,10 @@ views:
         title: Links
       - type: media-control
         entity: media_player.av_receiver
+      - type: tile
+        entity: media_player.av_receiver
+        features:
+          - type: media-player-volume-slider
   - title: Kiosk
     path: kiosk
     icon: mdi:tablet-dashboard

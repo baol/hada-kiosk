@@ -13,6 +13,7 @@ export global Actions {
         else if (kind == SliderKind.cover-position) { self.action(entity-id, ActionKind.set-cover-position, value, card-id); }
         else if (kind == SliderKind.cover-tilt) { self.action(entity-id, ActionKind.set-cover-tilt, value, card-id); }
         else if (kind == SliderKind.temperature) { self.action(entity-id, ActionKind.set-temperature, value, card-id); }
+        else if (kind == SliderKind.volume) { self.action(entity-id, ActionKind.set-volume, value, card-id); }
         else { self.action(entity-id, ActionKind.set-number, value, card-id); }
     }
 }
@@ -177,8 +178,15 @@ component FeatureRow {
             // a handle instead of the number (the state text has the position).
             inverted: root.feature.slider-kind == SliderKind.cover-position;
             color: root.feature.slider-kind == SliderKind.cover-position ? Theme.cover : Theme.primary;
-            show-value: root.feature.slider-kind != SliderKind.cover-position;
+            // Cover position and media volume (as in HA): a handle, no number.
+            show-value: root.feature.slider-kind != SliderKind.cover-position && root.feature.slider-kind != SliderKind.volume;
             changed(v) => { Actions.slider(root.feature.entity-id, root.feature.slider-kind, v, root.card-id); }
+        }
+        if root.feature.kind == ControlKind.slider && root.feature.can-mute: IconButton {
+            compact: true;
+            glyph: root.feature.muted ? "\u{F0581}" : "\u{F057E}";  // volume-off / volume-high
+            enabled: root.feature.available;
+            clicked => { Actions.action(root.feature.entity-id, ActionKind.mute, root.feature.muted ? 0 : 1, root.card-id); }
         }
         if root.feature.kind == ControlKind.open-close-stop: HorizontalLayout {
             spacing: 8px;

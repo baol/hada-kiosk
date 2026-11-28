@@ -233,7 +233,11 @@ pub enum Feature {
     NumericInput,
     TargetTemperature,
     UpdateActions,
-    Button { action_name: Option<String> },
+    /// `media-player-volume-slider`: volume slider, plus mute when supported.
+    MediaPlayerVolumeSlider,
+    Button {
+        action_name: Option<String>,
+    },
     Unknown(String),
 }
 

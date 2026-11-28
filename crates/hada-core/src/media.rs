@@ -43,6 +43,14 @@ impl MediaFeatures {
     }
 }
 
+/// Whether the player is on: its controls (volume included) only work then.
+pub fn is_powered(st: &EntityState) -> bool {
+    !matches!(
+        st.state.as_str(),
+        "off" | "standby" | "unavailable" | "unknown"
+    )
+}
+
 /// Position and duration in seconds. While playing, the position moves on from
 /// `media_position_updated_at` (as the Home Assistant frontend does).
 pub fn progress(st: &EntityState, now: f64) -> Option<(f64, f64)> {
