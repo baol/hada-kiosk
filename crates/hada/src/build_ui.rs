@@ -91,6 +91,23 @@ pub enum RowRef {
     },
     /// A media card.
     Media { slot: CardSlot, entity: EntityRef },
+    /// An entity on the map card with this key (see [`MapCard`]).
+    Map { key: String },
+}
+
+/// A map card: the app fits a view around its entities, asks the network thread
+/// for that image and places the markers.
+#[derive(Clone)]
+pub struct MapCard {
+    /// Stable across rebuilds while the entities, zoom and size stay the same.
+    pub key: String,
+    pub slot: CardSlot,
+    pub entities: Vec<EntityRef>,
+    pub zoom: u8,
+    pub style: hada_core::map::MapStyle,
+    /// Image size in pixels (the card's logical size: tiles show at HA's scale).
+    pub width: u32,
+    pub height: u32,
 }
 
 pub struct CardCtx {
@@ -125,6 +142,7 @@ pub struct Built {
     pub weather: HashMap<Arc<str>, Vec<WeatherRef>>,
     /// Media players shown in media cards (their progress bars tick while playing).
     pub media: Vec<Arc<str>>,
+    pub maps: Vec<MapCard>,
 }
 
 #[derive(Clone)]
@@ -160,6 +178,7 @@ struct Builder<'a> {
     calendars: HashMap<Arc<str>, Vec<CalendarRef>>,
     weather: HashMap<Arc<str>, Vec<WeatherRef>>,
     media: Vec<Arc<str>>,
+    maps: Vec<MapCard>,
     /// Estimated width of the card being built (logical px).
     width_hint: f32,
 }
@@ -172,6 +191,7 @@ pub fn build(dash: &Dashboard, ctx: Ctx<'_>, content_width: f32) -> Built {
         calendars: HashMap::new(),
         weather: HashMap::new(),
         media: Vec::new(),
+        maps: Vec::new(),
         width_hint: content_width,
     };
     let mut views = Vec::with_capacity(dash.views.len());
@@ -185,6 +205,7 @@ pub fn build(dash: &Dashboard, ctx: Ctx<'_>, content_width: f32) -> Built {
         calendars: b.calendars,
         weather: b.weather,
         media: b.media,
+        maps: b.maps,
     }
 }
 
@@ -494,6 +515,8 @@ pub fn masonry_rows(cards: &[(Rc<VecModel<CardData>>, u32)], n: usize) -> Vec<Se
 impl Builder<'_> {
     fn view(&mut self, v: &View, content_width: f32) -> ViewBuild {
         let badges_model: Rc<VecModel<RowData>> = Rc::new(VecModel::from(Vec::<RowData>::new()));
+        // The badges' tap actions go through a card context like button rows do.
+        let badge_card = self.new_card(None);
         for b in &v.badges {
             let spec = RowSpec {
                 entity: b.entity.clone(),
@@ -510,6 +533,13 @@ impl Builder<'_> {
                 self.ctx.icons,
                 self.ctx.translations,
             );
+            if let Some(tap) = &b.tap {
+                row.tappable = true;
+                self.cards[badge_card].row_actions.insert(
+                    b.entity.entity_id.to_string(),
+                    (Some(b.entity.entity_id.clone()), Some(tap.clone())),
+                );
+            }
             let index = badges_model.row_count();
             badges_model.push(row);
             // Registered like any other row so state changes reach the badge.
@@ -592,6 +622,7 @@ impl Builder<'_> {
             is_sections,
             max_columns: columns as i32,
             badges: ModelRc::from(badges_model),
+            badge_card: badge_card as i32,
             rows: ModelRc::from(rows_model.clone()),
         };
         ViewBuild {
@@ -752,11 +783,12 @@ impl Builder<'_> {
                 entity,
                 features,
                 hide_state,
+                vertical,
                 tap_toggles,
-                ..
             } => {
                 leaf.kind = 0;
                 leaf.hide_state = *hide_state;
+                leaf.vertical = *vertical;
                 leaf.tap_toggles = *tap_toggles;
                 self.push_row(&rows_model, card_id, entity, false, None, 0);
                 for f in features {
@@ -1025,6 +1057,40 @@ impl Builder<'_> {
                 }
                 if !self.media.contains(&entity.entity_id) {
                     self.media.push(entity.entity_id.clone());
+                }
+            }
+            CardKind::Map {
+                entities,
+                zoom,
+                dark,
+                aspect,
+            } => {
+                leaf.kind = 12;
+                leaf.aspect = *aspect;
+                let width = self.width_hint.max(160.0).round() as u32;
+                let height = (width as f32 * aspect).round().max(1.0) as u32;
+                let ids: Vec<&str> = entities.iter().map(|e| &*e.entity_id).collect();
+                let key = format!("{zoom}/{width}x{height}/{}", ids.join(","));
+                if let Some(slot) = &slot {
+                    for e in entities {
+                        self.index
+                            .entry(e.entity_id.clone())
+                            .or_default()
+                            .push(RowRef::Map { key: key.clone() });
+                    }
+                    self.maps.push(MapCard {
+                        key,
+                        slot: slot.clone(),
+                        entities: entities.clone(),
+                        zoom: *zoom,
+                        style: if *dark {
+                            hada_core::map::MapStyle::Dark
+                        } else {
+                            hada_core::map::MapStyle::Light
+                        },
+                        width,
+                        height,
+                    });
                 }
             }
             CardKind::Unsupported { entities } => {

@@ -13,6 +13,7 @@ use crate::ha::auth::{Auth, AuthState};
 use crate::ha::messages::{auth_message, command, Incoming, WsError};
 use crate::icons::IconResources;
 use crate::lovelace::LovelaceConfig;
+use crate::map::{self, MapStyle, MapView};
 use crate::model::Dashboard;
 use crate::normalise;
 use crate::state::EntitiesEvent;
@@ -105,6 +106,12 @@ pub enum HaEvent {
         url: String,
         image: Option<Artwork>,
     },
+    /// A map image asked for with [`HaCommand::FetchMap`]; `None` if it failed.
+    Map {
+        key: String,
+        view: MapView,
+        image: Option<Artwork>,
+    },
     Disconnected {
         reason: String,
         retry_in: Duration,
@@ -134,6 +141,14 @@ pub enum HaCommand {
     FetchArtwork {
         entity_id: String,
         url: String,
+    },
+    /// Download the tiles of a map card's view and stitch them (answered with
+    /// `HaEvent::Map`). Tiles are kept in `cache` when given.
+    FetchMap {
+        key: String,
+        view: MapView,
+        style: MapStyle,
+        cache: Option<std::path::PathBuf>,
     },
     /// Drop the connection and start over (re-fetches the dashboard).
     Reload,
@@ -348,7 +363,8 @@ where
                         call,
                         error: "not connected".into(),
                     }),
-                    Some(HaCommand::FetchArtwork { .. }) => {}
+                    // The UI asks again when the dashboard is rebuilt on reconnecting.
+                    Some(HaCommand::FetchArtwork { .. } | HaCommand::FetchMap { .. }) => {}
                 },
             }
         }
@@ -620,6 +636,19 @@ where
                             }
                         };
                         let _ = tx.send(HaEvent::Artwork { entity_id, url, image });
+                    });
+                }
+                Some(HaCommand::FetchMap { key, view, style, cache }) => {
+                    let tx = art_tx.clone();
+                    tokio::spawn(async move {
+                        let image = match map::render(&view, style, cache.as_deref()).await {
+                            Ok(a) => Some(a),
+                            Err(e) => {
+                                tracing::warn!("map {key}: {e}");
+                                None
+                            }
+                        };
+                        let _ = tx.send(HaEvent::Map { key, view, image });
                     });
                 }
             },

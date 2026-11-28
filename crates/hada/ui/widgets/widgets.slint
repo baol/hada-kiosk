@@ -76,7 +76,8 @@ export component ToggleBar {
     callback toggled();
     height: 42px;
     horizontal-stretch: 1;
-    min-width: 96px;
+    // Fits a vertical tile at HA's minimum width (3 of 12 columns) on small screens.
+    min-width: 64px;
     track := Rectangle {
         border-radius: 10px;
         background: root.checked ? Theme.accent.with-alpha(0.25) : Theme.track;
@@ -88,12 +89,13 @@ export component ToggleBar {
             y: 4px;
             x: root.checked ? parent.width / 2 : 4px;
             border-radius: 7px;
-            background: root.pending ? Theme.warn : (root.checked ? Theme.accent : Theme.card-raised.brighter(0.6));
+            background: root.pending ? Theme.warn : (root.checked ? Theme.accent : Theme.text-dim);
             animate x { duration: 150ms; easing: ease-out; }
             Icon {
-                glyph: "\u{F0425}";  // mdi:power; position and colour show the state
+                // As in HA: mdi:power when on, mdi:circle-outline when off.
+                glyph: root.checked ? "\u{F0425}" : "\u{F0766}";
                 size: 20px;
-                color: root.checked ? #3a2a00 : Theme.text;
+                color: root.checked ? #3a2a00 : #ffffff;
             }
         }
     }
@@ -111,6 +113,11 @@ export component ValueSlider {
     in property <float> step: 1;
     in property <string> unit;
     in property <bool> enabled: true;
+    // The fill grows from the left as the value falls (HA's cover position).
+    in property <bool> inverted;
+    in property <color> color: Theme.primary;
+    // The value as text on the track; otherwise a handle at the end of the fill.
+    in property <bool> show-value: true;
     callback changed(float);
     height: 48px;
     min-width: 120px;
@@ -118,10 +125,12 @@ export component ValueSlider {
     private property <bool> dragging;
     private property <float> drag-value;
     property <float> shown: root.dragging ? root.drag-value : root.value;
-    property <float> frac: root.maximum > root.minimum ? clamp((root.shown - root.minimum) / (root.maximum - root.minimum), 0, 1) : 0;
+    property <float> value-frac: root.maximum > root.minimum ? clamp((root.shown - root.minimum) / (root.maximum - root.minimum), 0, 1) : 0;
+    property <float> frac: root.inverted ? 1 - root.value-frac : root.value-frac;
 
     function value-at(x: length) -> float {
-        return root.quantize(root.minimum + clamp(x / root.width, 0, 1) * (root.maximum - root.minimum));
+        let f = clamp(x / root.width, 0, 1);
+        return root.quantize(root.minimum + (root.inverted ? 1 - f : f) * (root.maximum - root.minimum));
     }
     function quantize(v: float) -> float {
         if (root.step <= 0) { return v; }
@@ -131,17 +140,25 @@ export component ValueSlider {
     track := Rectangle {
         y: 6px;
         height: 36px;
-        border-radius: 18px;
-        background: Theme.track;
+        border-radius: root.show-value ? 18px : 10px;
+        background: root.show-value ? Theme.track : root.color.with-alpha(0.2);
         opacity: root.enabled ? 1 : 0.4;
         fill := Rectangle {
             x: 0;
-            width: max(36px, parent.width * root.frac);
+            width: max(root.show-value ? 36px : 16px, parent.width * root.frac);
             height: parent.height;
-            border-radius: 18px;
-            background: root.dragging ? Theme.primary.brighter(0.2) : Theme.primary;
+            border-radius: root.show-value ? 18px : 10px;
+            background: root.dragging ? root.color.brighter(0.2) : root.color;
+            if !root.show-value: Rectangle {
+                x: parent.width - 10px;
+                y: 8px;
+                width: 4px;
+                height: parent.height - 16px;
+                border-radius: 2px;
+                background: #ffffff;
+            }
         }
-        Text {
+        if root.show-value: Text {
             text: round(root.shown) + root.unit;
             color: Theme.text;
             font-size: Theme.font-s;

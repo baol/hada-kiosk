@@ -1,0 +1,32 @@
+[package]
+name = "hada-ios"
+description = "hada as an iOS app (iOS 16+): `cargo run -p hada-ios --target aarch64-apple-ios[-sim]`"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "hada"
+path = "src/main.rs"
+
+# Built for iOS this is the app. Built for the Mac it is the cargo runner (see
+# .cargo/config.toml) that bundles, signs, installs and launches the iOS build.
+
+[target.'cfg(target_os = "ios")'.dependencies]
+hada = { path = "../hada", default-features = false }
+hada-core = { path = "../hada-core" }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
+# Slint's winit backend draws with Skia on Metal on iOS.
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-18", "backend-winit", "renderer-skia", "unstable-winit-030"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSLocale", "NSObject", "NSSet"] }
+objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "block2", "UIAlertController", "UIApplication", "UIControl", "UIResponder", "UIScene", "UISceneDefinitions", "UISceneOptions", "UISceneSession", "UITextField", "UITextInputTraits", "UIView", "UIViewController", "UIWindow", "UIWindowScene"] }
+block2 = "0.6"
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+plist = "1"
+serde_json.workspace = true
+sha1_smol = "1"

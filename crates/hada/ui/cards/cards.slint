@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Icon, IconCircle, ToggleSwitch, ToggleBar, ValueSlider, IconButton, Card, CardTitle } from "../widgets/widgets.slint";
-import { RowData, FeatureData, LeafCard, CardData, ControlKind, SliderKind, ActionKind } from "../types.slint";
+import { RowData, FeatureData, LeafCard, CardData, ControlKind, SliderKind, ActionKind, MapMarker } from "../types.slint";
 
 // Shared action signal; every card re-emits through this global so the root
 // only has to wire one callback.
@@ -173,6 +173,11 @@ component FeatureRow {
             step: root.feature.step;
             unit: root.feature.unit;
             enabled: root.feature.available;
+            // As HA's cover-position feature: purple, filled by the closed part,
+            // a handle instead of the number (the state text has the position).
+            inverted: root.feature.slider-kind == SliderKind.cover-position;
+            color: root.feature.slider-kind == SliderKind.cover-position ? Theme.cover : Theme.primary;
+            show-value: root.feature.slider-kind != SliderKind.cover-position;
             changed(v) => { Actions.slider(root.feature.entity-id, root.feature.slider-kind, v, root.card-id); }
         }
         if root.feature.kind == ControlKind.open-close-stop: HorizontalLayout {
@@ -203,10 +208,39 @@ component FeatureRow {
 export component TileCard inherits Card {
     in property <LeafCard> card;
     property <RowData> main: root.card.rows[0];
+    // One layout as the card's direct child, so its height reaches the card
+    // (masonry views size cards by their content); the two headers are inside.
     VerticalLayout {
         padding: Theme.pad;
         spacing: Theme.gap;
-        HorizontalLayout {
+        if root.card.vertical: VerticalLayout {
+            alignment: center;
+            vertical-stretch: 1;
+            spacing: 6px;
+            HorizontalLayout {
+                alignment: center;
+                IconCircle {
+                    glyph: root.main.glyph;
+                    active: root.main.active;
+                    dim: root.main.unavailable;
+                }
+            }
+            // `name: ""` hides the name, as in HA.
+            if root.main.name != "": Text {
+                text: root.main.name;
+                color: root.main.unavailable ? Theme.text-faint : Theme.text;
+                font-size: Theme.font-m;
+                font-weight: 500;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+            if !root.card.hide-state: StateText {
+                text: root.main.state-text;
+                dim: root.main.unavailable;
+                horizontal-alignment: center;
+            }
+        }
+        if !root.card.vertical: HorizontalLayout {
             spacing: 12px;
             IconCircle {
                 glyph: root.main.glyph;
@@ -589,6 +623,91 @@ component RoundButton {
     ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
 }
 
+// A map with the card's people on it: the image comes from Rust (tiles stitched on
+// the network thread), the markers are placed here by their position on it.
+export component MapCard inherits Card {
+    in property <LeafCard> card;
+    clip: true;
+    VerticalLayout {
+        if root.card.title != "": CardTitle {
+            text: root.card.title;
+            height: 52px;
+            x: Theme.pad;
+        }
+        map := Rectangle {
+            height: self.width * (root.card.aspect > 0 ? root.card.aspect : 1);
+            background: #262626;
+            if root.card.has-artwork: Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.card.artwork;
+                image-fit: fill;
+            }
+            if !root.card.has-artwork: Text {
+                width: parent.width;
+                height: parent.height;
+                text: "Loading map…";
+                color: Theme.text-dim;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            // Zones under the people, as HA draws them.
+            for m in root.card.markers: Rectangle {
+                visible: m.radius > 0;
+                width: max(16px, 2 * m.radius * map.width);
+                height: self.width;
+                x: m.x * map.width - self.width / 2;
+                y: m.y * map.height - self.height / 2;
+                border-radius: self.width / 2;
+                background: #ff9800.with-alpha(0.2);
+                border-width: 1px;
+                border-color: #ff9800;
+            }
+            for m in root.card.markers: Rectangle {
+                visible: m.radius <= 0;
+                width: 44px;
+                height: 44px;
+                x: m.x * map.width - self.width / 2;
+                y: m.y * map.height - self.height / 2;
+                border-radius: self.width / 2;
+                background: Theme.card;
+                border-width: 2px;
+                border-color: Theme.primary;
+                clip: true;
+                if m.has-picture: Image {
+                    x: 2px;
+                    y: 2px;
+                    width: parent.width - 4px;
+                    height: parent.height - 4px;
+                    source: m.picture;
+                    image-fit: cover;
+                }
+                if !m.has-picture: Text {
+                    text: m.initials;
+                    color: Theme.text;
+                    font-size: Theme.font-m;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+            // Required by the tile providers.
+            Rectangle {
+                x: parent.width - self.width;
+                y: parent.height - self.height;
+                width: credit.preferred-width + 8px;
+                height: credit.preferred-height + 2px;
+                background: #000000.with-alpha(0.5);
+                credit := Text {
+                    text: "© OpenStreetMap contributors";
+                    color: #dddddd;
+                    font-size: 10px;
+                }
+            }
+        }
+    }
+}
+
 export component MediaCard inherits Card {
     in property <LeafCard> card;
     property <string> id: root.card.rows.length > 0 ? root.card.rows[0].entity-id : "";
@@ -775,6 +894,7 @@ export component LeafCardView inherits VerticalLayout {
     if root.card.kind == 9: CalendarCard { card: root.card; }
     if root.card.kind == 10: WeatherCard { card: root.card; }
     if root.card.kind == 11: MediaCard { card: root.card; }
+    if root.card.kind == 12: MapCard { card: root.card; }
 }
 
 // A `grid` card: children in rows of `grid-columns` (positions from Rust).

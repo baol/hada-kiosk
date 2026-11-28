@@ -10,6 +10,7 @@ pub mod domain;
 pub mod ha;
 pub mod icons;
 pub mod lovelace;
+pub mod map;
 pub mod media;
 pub mod model;
 pub mod normalise;

@@ -1,0 +1,12 @@
+# iOS: `cargo run -p hada-ios --target aarch64-apple-ios[-sim]` builds the app,
+# then runs the same crate built for the Mac, which bundles, signs, installs and
+# starts it (crates/hada-ios/src/runner.rs). A separate target dir keeps the two
+# cargo runs from waiting on each other's lock.
+[target.aarch64-apple-ios]
+runner = ["cargo", "run", "--quiet", "--target-dir", "target/ios-runner", "-p", "hada-ios", "--"]
+
+[target.aarch64-apple-ios-sim]
+runner = ["cargo", "run", "--quiet", "--target-dir", "target/ios-runner", "-p", "hada-ios", "--"]
+
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "16.0"

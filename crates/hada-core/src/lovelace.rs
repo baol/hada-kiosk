@@ -39,7 +39,7 @@ pub struct ViewConfig {
 #[serde(untagged)]
 pub enum BadgeConfig {
     Id(String),
-    Object(BadgeObject),
+    Object(Box<BadgeObject>),
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -54,6 +54,7 @@ pub struct BadgeObject {
     pub show_name: Option<bool>,
     pub show_state: Option<bool>,
     pub show_icon: Option<bool>,
+    pub tap_action: Option<ActionConfig>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -112,6 +113,10 @@ pub struct CardConfig {
     pub tap_action: Option<ActionConfig>,
     pub icon_tap_action: Option<ActionConfig>,
     pub hold_action: Option<ActionConfig>,
+    // map
+    pub default_zoom: Option<f64>,
+    pub theme_mode: Option<String>,
+    pub aspect_ratio: Option<Value>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
