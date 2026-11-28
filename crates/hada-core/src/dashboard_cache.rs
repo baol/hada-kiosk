@@ -4,7 +4,7 @@
 //!
 //! File: `b"HADA"`, format version (u16 LE), model hash (u64 LE), then the
 //! [postcard](https://postcard.jamesmunns.com/) encoding of [`Stored`]. A different
-//! format version or model hash (the model's source changed) means the file is
+//! format version or model hash (the model, parsing or normalising changed) means the file is
 //! ignored, never mis-decoded.
 
 use crate::model::Dashboard;

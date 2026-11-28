@@ -128,12 +128,13 @@ impl EntityAction {
         let domain = domain_of(id);
         let call = match &self.action {
             Action::Toggle => match domain {
-                "script" | "scene" => ServiceCall::new(domain, "turn_on", id),
+                // A scene has no state to undo; a running script stops, as in HA.
+                "scene" => ServiceCall::new("scene", "turn_on", id),
                 "button" => ServiceCall::new("button", "press", id),
                 "cover" => ServiceCall::new("cover", "toggle", id),
                 "lock" => return None,
                 "switch" | "light" | "fan" | "input_boolean" | "automation" | "media_player"
-                | "humidifier" | "siren" | "remote" | "climate" | "vacuum" => {
+                | "script" | "humidifier" | "siren" | "remote" | "climate" | "vacuum" => {
                     ServiceCall::new(domain, "toggle", id)
                 }
                 _ => ServiceCall::new("homeassistant", "toggle", id),
@@ -279,7 +280,12 @@ mod tests {
         let c = call("script.play_radio", Action::Toggle);
         assert_eq!(
             (c.domain.as_str(), c.service.as_str()),
-            ("script", "turn_on")
+            ("script", "toggle")
+        );
+        let c = call("scene.evening", Action::Toggle);
+        assert_eq!(
+            (c.domain.as_str(), c.service.as_str()),
+            ("scene", "turn_on")
         );
         let c = call("button.router_reboot", Action::Toggle);
         assert_eq!((c.domain.as_str(), c.service.as_str()), ("button", "press"));

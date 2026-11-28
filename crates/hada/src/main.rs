@@ -132,6 +132,9 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .with_target(false)
+        // A failed write (terminal closed) would be reported with eprintln!, which
+        // panics when stderr itself fails, killing whichever thread logged.
+        .log_internal_errors(false)
         .init();
 
     let cli = Cli::parse();

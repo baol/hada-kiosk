@@ -164,18 +164,35 @@ async fn mock_server(listener: TcpListener, token: &'static str) -> Vec<Value> {
     calls
 }
 
-async fn recv_until<F: FnMut(&HaEvent) -> bool>(
-    rx: &mut mpsc::UnboundedReceiver<HaEvent>,
-    mut pred: F,
-) -> HaEvent {
+/// The client's events, with those a wait skipped kept for later waits: replies to
+/// requests in flight together (calendar, forecast) may arrive in either order.
+struct Events {
+    rx: mpsc::UnboundedReceiver<HaEvent>,
+    skipped: Vec<HaEvent>,
+}
+
+impl Events {
+    fn new(rx: mpsc::UnboundedReceiver<HaEvent>) -> Self {
+        Self {
+            rx,
+            skipped: Vec::new(),
+        }
+    }
+}
+
+async fn recv_until<F: FnMut(&HaEvent) -> bool>(events: &mut Events, mut pred: F) -> HaEvent {
+    if let Some(i) = events.skipped.iter().position(&mut pred) {
+        return events.skipped.remove(i);
+    }
     loop {
-        let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        let ev = tokio::time::timeout(Duration::from_secs(5), events.rx.recv())
             .await
             .expect("timed out waiting for event")
             .expect("event channel closed");
         if pred(&ev) {
             return ev;
         }
+        events.skipped.push(ev);
     }
 }
 
@@ -185,7 +202,8 @@ async fn full_session_against_mock_ha() {
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(mock_server(listener, "secret-token"));
 
-    let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<HaEvent>();
+    let (ev_tx, ev_rx) = mpsc::unbounded_channel::<HaEvent>();
+    let mut ev_rx = Events::new(ev_rx);
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<HaCommand>();
     let cfg = HaConfig {
         base_url: format!("http://{addr}"),
@@ -357,7 +375,8 @@ async fn invalid_token_is_reported() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(mock_server(listener, "right-token"));
-    let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<HaEvent>();
+    let (ev_tx, ev_rx) = mpsc::unbounded_channel::<HaEvent>();
+    let mut ev_rx = Events::new(ev_rx);
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<HaCommand>();
     let cfg = HaConfig {
         base_url: format!("http://{addr}"),
@@ -387,7 +406,8 @@ async fn unreachable_server_reports_disconnect_with_backoff() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
-    let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<HaEvent>();
+    let (ev_tx, ev_rx) = mpsc::unbounded_channel::<HaEvent>();
+    let mut ev_rx = Events::new(ev_rx);
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<HaCommand>();
     let cfg = HaConfig {
         base_url: format!("http://{addr}"),

@@ -133,7 +133,8 @@ component Content inherits Flickable {
         padding: Theme.pad;
         spacing: Theme.pad;
         alignment: start;
-        if root.view.badges.length > 0: HorizontalLayout {
+        // Badges wrap onto more lines instead of widening the view (as in HA).
+        if root.view.badges.length > 0: FlexboxLayout {
             spacing: Theme.gap;
             alignment: start;
             for b in root.view.badges: Badge { data: b; card-id: root.view.badge-card; }
