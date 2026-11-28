@@ -713,7 +713,19 @@ impl App {
         });
     }
 
-    fn send(&self, call: hada_core::actions::ServiceCall) {
+    fn send(&self, mut call: hada_core::actions::ServiceCall) {
+        // Some players (Samsung TVs) reject media_player.toggle; like HA's frontend,
+        // send turn_on or turn_off from the state instead.
+        if call.domain == "media_player" && call.service == "toggle" {
+            let id = call
+                .target
+                .as_ref()
+                .and_then(|t| t.get("entity_id")?.as_str());
+            if let Some(st) = id.and_then(|id| self.store.get(id)) {
+                let on = hada_core::domain::is_active("media_player", &st.state);
+                call.service = if on { "turn_off" } else { "turn_on" }.into();
+            }
+        }
         tracing::info!(
             "call_service {}.{} {:?}",
             call.domain,

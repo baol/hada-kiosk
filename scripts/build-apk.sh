@@ -29,7 +29,13 @@ if [ ! -d "$ANDROID_HOME/ndk/$NDK_VERSION" ] || [ ! -d "$ANDROID_HOME/platforms/
   { yes 2> /dev/null || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
     --sdk_root="$ANDROID_HOME" "ndk;$NDK_VERSION" "platforms;$PLATFORM" "build-tools;$BUILD_TOOLS" > /dev/null
 fi
-NDK_BIN="$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin"
+# The NDK ships one prebuilt host toolchain: linux-x86_64, or darwin-x86_64 on macOS
+# (Apple Silicon too).
+case "$(uname -s)" in
+  Darwin) NDK_HOST=darwin-x86_64 ;;
+  *) NDK_HOST=linux-x86_64 ;;
+esac
+NDK_BIN="$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/$NDK_HOST/bin"
 BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
 JAR="$ANDROID_HOME/platforms/$PLATFORM/android.jar"
 
@@ -64,9 +70,11 @@ for t in "${TARGETS[@]}"; do
 done
 
 # --- Java: preferences screen and boot receiver ----------------------------------
-mapfile -t JAVA < <(find android/java -name '*.java' | sort)
+JAVA=()
+while IFS= read -r f; do JAVA+=("$f"); done < <(find android/java -name '*.java' | sort) # no mapfile in macOS bash 3.2
 javac --release 8 -Xlint:-options -encoding UTF-8 -classpath "$JAR" -d "$OUT/classes" "${JAVA[@]}"
-mapfile -t CLASSES < <(find "$OUT/classes" -name '*.class' | sort)
+CLASSES=()
+while IFS= read -r f; do CLASSES+=("$f"); done < <(find "$OUT/classes" -name '*.class' | sort) # no mapfile in macOS bash 3.2
 "$BT/d8" --release --min-api "$MIN_SDK" --lib "$JAR" --output "$OUT/stage" "${CLASSES[@]}"
 
 # --- manifest, icons; version code as cargo-apk had it (1<<24 | major<<16 | minor<<8 | patch)

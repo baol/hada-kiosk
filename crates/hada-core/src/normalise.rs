@@ -80,13 +80,14 @@ fn badge(b: &BadgeConfig) -> Option<Badge> {
 }
 
 /// A badge's tap: the configured toggle or action. HA's default opens the
-/// more-info dialog, which hada does not have; for scripts, scenes and buttons
-/// its main control runs them, so a tap does that.
+/// more-info dialog, which hada does not have; its main control toggles a
+/// switch-like entity and runs a script, scene or button, so a tap does that.
 fn badge_tap(id: &str, tap: Option<&ActionConfig>) -> Option<ActionSpec> {
+    let domain = domain::domain_of(id);
     match tap.and_then(action) {
         Some(a @ (ActionSpec::Toggle | ActionSpec::PerformAction { .. })) => Some(a),
         None | Some(ActionSpec::MoreInfo)
-            if matches!(domain::domain_of(id), "script" | "scene" | "button") =>
+            if domain::is_toggleable(domain) || matches!(domain, "script" | "scene" | "button") =>
         {
             Some(ActionSpec::Toggle)
         }
@@ -571,7 +572,11 @@ mod tests {
             Some(ActionSpec::Toggle)
         );
         assert_eq!(badge_tap("sensor.t", None), None);
-        assert_eq!(badge_tap("switch.x", None), None);
+        assert_eq!(
+            badge_tap("input_boolean.radio2", None),
+            Some(ActionSpec::Toggle)
+        );
+        assert_eq!(badge_tap("lock.door", None), None);
         assert_eq!(badge_tap("script.bed", Some(&cfg("none"))), None);
     }
 

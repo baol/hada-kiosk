@@ -34,6 +34,13 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const PING_INTERVAL: Duration = Duration::from_secs(30);
+/// How often the session checks whether the app was suspended (phone locked, app in
+/// the background, computer asleep).
+const WAKE_CHECK: Duration = Duration::from_secs(5);
+/// A check this much later than due means the process was not running: the server
+/// has likely dropped the socket and states were missed, so reconnect at once
+/// instead of waiting up to two ping intervals for the ping timeout.
+const SUSPEND_GAP: Duration = Duration::from_secs(20);
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 const AUTH_FAIL_BACKOFF: Duration = Duration::from_secs(60);
@@ -530,6 +537,10 @@ where
     ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
     ping.tick().await; // first tick fires immediately; skip it
     let mut awaiting_pong: Option<u64> = None;
+    let mut wake = interval(WAKE_CHECK);
+    wake.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    wake.tick().await;
+    let mut last_wake = (std::time::Instant::now(), std::time::SystemTime::now());
     let mut pending_calls: HashMap<u64, ServiceCall> = HashMap::new();
     let mut pending_calendars: HashMap<u64, String> = HashMap::new();
     let mut calendar_tick = interval(CALENDAR_REFRESH);
@@ -653,6 +664,14 @@ where
                 }
             },
             Some(ev) = art_rx.recv() => emit(ev),
+            _ = wake.tick() => {
+                let now = (std::time::Instant::now(), std::time::SystemTime::now());
+                if let Some(gap) = suspended_for(last_wake, now) {
+                    tracing::info!("app was suspended for {gap:?}; reconnecting");
+                    return Ok(SessionEnd::Reconnect);
+                }
+                last_wake = now;
+            }
             _ = ping.tick() => {
                 if awaiting_pong.is_some() {
                     return Err(SessionError::Protocol("ping timeout".into()));
@@ -813,6 +832,20 @@ fn handle_event<F: Fn(HaEvent)>(msg: &Incoming, sub_id: u64, emit: &F) {
     }
 }
 
+/// How long the process was not running between two wake checks, if that is more
+/// than [`SUSPEND_GAP`]. Both clocks count: the wall clock goes on while the device
+/// sleeps (the monotonic one stops on Apple and Linux), and a check that fires late
+/// on the monotonic clock means the app was frozen while the device was awake.
+fn suspended_for(
+    last: (std::time::Instant, std::time::SystemTime),
+    now: (std::time::Instant, std::time::SystemTime),
+) -> Option<Duration> {
+    let mono = now.0.saturating_duration_since(last.0);
+    let wall = now.1.duration_since(last.1).unwrap_or_default();
+    let late = mono.max(wall).saturating_sub(WAKE_CHECK);
+    (late > SUSPEND_GAP).then_some(late)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -840,6 +873,32 @@ mod tests {
             &ev(r#"{"url_path":"other"}"#),
             Some("kiosk")
         ));
+    }
+
+    #[test]
+    fn notices_a_suspended_app() {
+        use std::time::{Instant, SystemTime};
+        let t0 = (Instant::now(), SystemTime::now());
+        let at = |mono: u64, wall: u64| {
+            (
+                t0.0 + Duration::from_secs(mono),
+                t0.1 + Duration::from_secs(wall),
+            )
+        };
+        assert_eq!(suspended_for(t0, at(5, 5)), None, "on time");
+        assert_eq!(suspended_for(t0, at(6, 7)), None, "a little late");
+        assert_eq!(
+            suspended_for(t0, at(5, 3605)),
+            Some(Duration::from_secs(3600)),
+            "device slept: only the wall clock moved"
+        );
+        assert_eq!(
+            suspended_for(t0, at(605, 605)),
+            Some(Duration::from_secs(600)),
+            "app frozen while the device was awake"
+        );
+        // The wall clock set back must not panic or count.
+        assert_eq!(suspended_for(at(0, 100), at(5, 0)), None);
     }
 
     #[test]

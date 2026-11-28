@@ -34,12 +34,12 @@ thread_local! {
 type BoxError = Box<dyn std::error::Error>;
 
 pub fn main() {
-    init_logging();
+    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    let data_dir = home.join("Library/Application Support/hada");
+    init_logging(&data_dir);
     tracing::info!("hada {} ({BUNDLE_ID})", hada::VERSION);
     // UIKit looks the scene delegate up by the name in Info.plist.
     let _ = SceneDelegate::class();
-    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
-    let data_dir = home.join("Library/Application Support/hada");
     let preferred = NSLocale::preferredLanguages()
         .firstObject()
         .map(|s| s.to_string())
@@ -404,15 +404,31 @@ fn deliver(result: PrefsResult) {
     });
 }
 
-/// `tracing` output to stderr, which `cargo run` shows.
-fn init_logging() {
-    let _ = tracing_subscriber::fmt()
+/// `tracing` output to stderr, which `cargo run` shows while the device stays
+/// connected, and to `hada.log` in the data folder, which outlives a locked phone
+/// or a lost connection (the previous run's log is kept as `hada.log.1`). Copy it
+/// with `xcrun devicectl device copy from --domain-type appDataContainer
+/// --domain-identifier io.github.baol.hada --source "Library/Application Support/hada/hada.log"`.
+fn init_logging(data_dir: &std::path::Path) {
+    use tracing_subscriber::fmt::writer::MakeWriterExt;
+    let _ = std::fs::create_dir_all(data_dir);
+    let path = data_dir.join("hada.log");
+    let _ = std::fs::rename(&path, data_dir.join("hada.log.1"));
+    let file = std::fs::File::create(&path).ok().map(std::sync::Arc::new);
+    let builder = tracing_subscriber::fmt()
         // winit warns on every frame about iOS-specific event ordering.
         .with_env_filter(tracing_subscriber::EnvFilter::new("info,winit=error"))
         .with_ansi(false)
         .with_target(false)
-        .with_writer(std::io::stderr)
-        .try_init();
+        // stderr is the console of `cargo run`, gone once the phone locks: a failed
+        // write there would be reported with eprintln!, which panics and kills the
+        // network thread (the app then looks stuck). Drop such errors instead.
+        .log_internal_errors(false);
+    let _ = match file {
+        // The file first: the pair stops at the first failing writer.
+        Some(f) => builder.with_writer(f.and(std::io::stderr)).try_init(),
+        None => builder.with_writer(std::io::stderr).try_init(),
+    };
     std::panic::set_hook(Box::new(|info| {
         tracing::error!("panic: {info}");
     }));
