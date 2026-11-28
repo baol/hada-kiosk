@@ -306,6 +306,8 @@ pub enum SliderKind {
     CoverTilt,
     Number,
     Temperature,
+    /// Media player volume, 0–100 %.
+    Volume,
 }
 
 /// The one control shown at the right of an `entities` row / glance tap.
@@ -413,6 +415,17 @@ pub fn feature_control(entity_id: &str, feature: &Feature, st: Option<&EntitySta
                 Control::None
             }
         }
+        Feature::MediaPlayerVolumeSlider => match st {
+            Some(s) if crate::media::MediaFeatures::of(s).volume => Control::Slider(SliderSpec {
+                kind: SliderKind::Volume,
+                min: 0.0,
+                max: 100.0,
+                step: 1.0,
+                value: (s.attr_f64("volume_level").unwrap_or(0.0) * 100.0).round(),
+                unit: "%",
+            }),
+            _ => Control::None,
+        },
         Feature::Button { .. } => match domain {
             "button" => Control::Press,
             _ => Control::Run,
@@ -547,5 +560,28 @@ mod tests {
             Control::Slider(s) => assert_eq!(s.value, 100.0),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn media_player_volume_slider() {
+        let f = Feature::MediaPlayerVolumeSlider;
+        // VOLUME_SET (4) | VOLUME_MUTE (8)
+        let avr = EntityState::new("on")
+            .with_attr("supported_features", json!(12))
+            .with_attr("volume_level", json!(0.46));
+        match feature_control("media_player.avr", &f, Some(&avr)) {
+            Control::Slider(s) => {
+                assert_eq!(s.kind, SliderKind::Volume);
+                assert_eq!((s.min, s.max, s.step, s.value), (0.0, 100.0, 1.0, 46.0));
+                assert_eq!(s.unit, "%");
+            }
+            other => panic!("{other:?}"),
+        }
+        let no_volume = EntityState::new("on").with_attr("supported_features", json!(8));
+        assert_eq!(
+            feature_control("media_player.tv", &f, Some(&no_volume)),
+            Control::None
+        );
+        assert_eq!(feature_control("media_player.tv", &f, None), Control::None);
     }
 }

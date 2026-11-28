@@ -233,10 +233,7 @@ pub fn fill_media(
         return;
     };
     let f = MediaFeatures::of(s);
-    leaf.powered = !matches!(
-        s.state.as_str(),
-        "off" | "standby" | "unavailable" | "unknown"
-    );
+    leaf.powered = media::is_powered(s);
     leaf.playing = s.state == "playing";
     leaf.subtitle = domain::state_word(&entity.entity_id, s, tr).into();
     leaf.value_text = s.attr_str("media_title").unwrap_or("").into();
@@ -1351,6 +1348,7 @@ fn slider_kind(k: CoreSliderKind) -> SliderKind {
         CoreSliderKind::CoverTilt => SliderKind::CoverTilt,
         CoreSliderKind::Number => SliderKind::Number,
         CoreSliderKind::Temperature => SliderKind::Temperature,
+        CoreSliderKind::Volume => SliderKind::Volume,
     }
 }
 
@@ -1458,6 +1456,14 @@ pub fn fill_feature(
     if let Feature::Button { action_name } = feature {
         f.label = action_name.as_deref().unwrap_or("").into();
     }
+    if let Feature::MediaPlayerVolumeSlider = feature {
+        // Volume only works while the player is on.
+        f.available = st.is_some_and(hada_core::media::is_powered);
+        f.can_mute = st.is_some_and(|s| hada_core::media::MediaFeatures::of(s).mute);
+        f.muted = st
+            .and_then(|s| s.attr_bool("is_volume_muted"))
+            .unwrap_or(false);
+    }
 }
 
 #[cfg(test)]
@@ -1465,6 +1471,32 @@ mod tests {
     use super::*;
     use hada_core::timefmt::LOCALE_IT;
     use serde_json::json;
+
+    #[test]
+    fn volume_feature_follows_the_player() {
+        let entity = EntityRef::new("media_player.avr");
+        let feature = Feature::MediaPlayerVolumeSlider;
+        // VOLUME_SET (4) | VOLUME_MUTE (8)
+        let on = EntityState::new("playing")
+            .with_attr("supported_features", json!(12))
+            .with_attr("volume_level", json!(0.4))
+            .with_attr("is_volume_muted", json!(true));
+        let mut f = FeatureData::default();
+        fill_feature(&mut f, &entity, &feature, Some(&on));
+        assert_eq!(f.kind, ControlKind::Slider);
+        assert_eq!(f.slider_kind, SliderKind::Volume);
+        assert_eq!(f.value, 40.0);
+        assert!(f.available && f.can_mute && f.muted);
+
+        let mut off = on.clone();
+        off.state = "off".into();
+        fill_feature(&mut f, &entity, &feature, Some(&off));
+        assert!(!f.available, "no volume while the player is off");
+
+        let no_mute = EntityState::new("on").with_attr("supported_features", json!(4));
+        fill_feature(&mut f, &entity, &feature, Some(&no_mute));
+        assert!(f.available && !f.can_mute && !f.muted);
+    }
 
     #[test]
     fn forecast_columns_fit_the_card() {

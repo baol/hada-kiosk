@@ -456,6 +456,7 @@ pub fn feature(f: &FeatureConfig) -> Feature {
         "numeric-input" => Feature::NumericInput,
         "target-temperature" => Feature::TargetTemperature,
         "update-actions" => Feature::UpdateActions,
+        "media-player-volume-slider" => Feature::MediaPlayerVolumeSlider,
         "button" => Feature::Button {
             action_name: f.action_name.clone(),
         },
@@ -693,6 +694,22 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn tile_feature_types() {
+        let of = |t: &str| {
+            feature(&crate::lovelace::FeatureConfig {
+                feature_type: t.into(),
+                ..Default::default()
+            })
+        };
+        assert_eq!(
+            of("media-player-volume-slider"),
+            Feature::MediaPlayerVolumeSlider
+        );
+        assert_eq!(of("light-brightness"), Feature::LightBrightness);
+        assert_eq!(of("alarm-modes"), Feature::Unknown("alarm-modes".into()));
     }
 
     #[test]

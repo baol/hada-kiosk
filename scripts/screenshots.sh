@@ -18,7 +18,7 @@ F=(--dashboard tests/fixtures/dashboard.yaml --states tests/fixtures/states.json
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view home    --size 1024x600 --screenshot "$OUT/landscape-home.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view devices --size 1024x600 --screenshot "$OUT/landscape-devices.png"
 # The whole Devices view, down to the media card with its album art.
-"$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view devices --size 1024x1100 --screenshot "$OUT/devices-full.png"
+"$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view devices --size 1024x1200 --screenshot "$OUT/devices-full.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view kiosk   --size 1024x600 --screenshot "$OUT/landscape-kiosk.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view kiosk   --size 600x1024 --screenshot "$OUT/portrait-kiosk.png"
 "$BIN" "${F[@]}" --lang en --translations tests/fixtures/translations_en.json --view home    --size 600x1024 --screenshot "$OUT/portrait-home.png"

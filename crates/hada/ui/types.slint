@@ -5,7 +5,7 @@
 export enum ControlKind { none, toggle, slider, open-close-stop, press, run, install }
 
 // Slider semantics (what the float means) – mirrors hada_core::domain::SliderKind.
-export enum SliderKind { brightness-pct, fan-percentage, cover-position, cover-tilt, number, temperature }
+export enum SliderKind { brightness-pct, fan-percentage, cover-position, cover-tilt, number, temperature, volume }
 
 export enum ActionKind {
     toggle, turn-on, turn-off,
@@ -54,6 +54,9 @@ export struct FeatureData {
     pending: bool,
     on: bool,
     available: bool,
+    // media-player-volume-slider: mute button next to the slider
+    can-mute: bool,
+    muted: bool,
 }
 
 // A person (or tracker) on a map card, or a zone (radius > 0).

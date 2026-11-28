@@ -199,6 +199,7 @@ mod tests {
                 "test dashboard lacks {kind}"
             );
         }
+        assert!(all.contains("MediaPlayerVolumeSlider"));
         let key = cache_key("http://ha.local:8123/", None);
         let s = Stored {
             key: key.clone(),
